@@ -32,6 +32,13 @@ public class IngestConfig {
     
     /** Infer format from file extension (.csv -> csv, .tsv -> tsv) */
     private boolean inferFormatFromExtension = true;
+    /**
+     * List of main tables for staging table creation, mapped from ingest.main-tables in application.properties
+     */
+    /**
+     * List of main tables for staging table creation, mapped from ingest.main-tables in application.properties
+     */
+    private java.util.List<String> mainTables;
     
     // ========================================
     // TSV SETTINGS (ingest.tsv.*)

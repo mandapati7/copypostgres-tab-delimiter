@@ -92,7 +92,7 @@ public class DelimitedFileProcessingService {
         
         if (routeByFilename) {
             // Route to existing table based on filename (e.g., PM162 -> PM1)
-            targetTable = filenameRouterService.getFullyQualifiedTableName(file.getOriginalFilename());           
+            targetTable = csvProcessingConfig.getStagingTablePrefix() + "_" + filenameRouterService.getFullyQualifiedTableName(file.getOriginalFilename());           
 
             log.info("Routing {} to {}", file.getOriginalFilename(), targetTable);
         } else {

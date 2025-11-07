@@ -12,6 +12,7 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 
 /**
  * Database initialization component that runs at application startup.
@@ -33,6 +34,12 @@ public class DatabaseInitializer {
     
     @Autowired
     private DataSource dataSource;
+
+    @Autowired
+    private IngestConfig ingestConfig;
+
+    @Autowired
+    private CsvProcessingConfig csvProcessingConfig;
     
     /**
      * Runs after the application is fully started.
@@ -83,6 +90,9 @@ public class DatabaseInitializer {
             } else {
                 logger.info(ANSI_GREEN + ANSI_BOLD + "[SUCCESS] Table structure validation: OK" + ANSI_RESET);
             }
+
+             // Step 6: Create staging tables for main tables
+            createStagingTablesFromMainTables();
             
             logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
             logger.info(ANSI_GREEN + ANSI_BOLD + "DATABASE INITIALIZATION - COMPLETED SUCCESSFULLY" + ANSI_RESET);
@@ -127,8 +137,7 @@ public class DatabaseInitializer {
             String checkSQL = """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables 
-                    WHERE table_schema = 'public' 
-                    AND table_name = ?
+                    WHERE table_name = ?
                 )
                 """;
             
@@ -256,6 +265,38 @@ public class DatabaseInitializer {
         } catch (Exception e) {
             logger.error("   Error verifying table structure: {}", e.getMessage());
             return false;
+        }
+    }
+
+    
+    /**
+     * Create staging tables for each main table listed in ingest.main-tables property.
+     * Staging tables are named with the prefix 'staging_'.
+     */
+    private void createStagingTablesFromMainTables() {
+
+        List<String> mainTables = ingestConfig.getMainTables();
+
+        try (Connection connection = dataSource.getConnection()) {            
+            for (String mainTable : mainTables) {
+                String trimmed = mainTable.trim();
+                if (trimmed.isEmpty()) continue;
+                StringBuilder stagingTable = new StringBuilder(csvProcessingConfig.getStagingTablePrefix()).append("_").append(trimmed);
+                if (!checkTableExists(stagingTable.toString())) {
+                    logger.info(ANSI_YELLOW + "[INFO] Creating staging table: {} from {}" + ANSI_RESET, stagingTable, trimmed);
+                    String ddl = String.format("CREATE TABLE IF NOT EXISTS %s (LIKE %s INCLUDING ALL)", stagingTable, trimmed);
+                    try (Statement stmt = connection.createStatement()) {
+                        stmt.execute(ddl);
+                        logger.info(ANSI_GREEN + "   Created staging table: {}" + ANSI_RESET, stagingTable);
+                    } catch (Exception e) {
+                        logger.error(ANSI_RED + "   Failed to create staging table {}: {}" + ANSI_RESET, stagingTable, e.getMessage());
+                    }
+                } else {
+                    logger.info(ANSI_GREEN + "[SUCCESS] Staging table exists: {}" + ANSI_RESET, stagingTable);
+                }
+            }
+        } catch (Exception e) {
+            logger.error(ANSI_RED + "Error creating staging tables: {}" + ANSI_RESET, e.getMessage());
         }
     }
 }
