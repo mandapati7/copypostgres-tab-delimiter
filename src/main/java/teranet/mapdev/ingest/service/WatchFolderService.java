@@ -630,8 +630,8 @@ public class WatchFolderService {
                 logger.info("[Done] Created .done file: {}", doneFileName);
             }
 
-            Files.createFile(doneFilePath);
-            logger.info("Created done marker file: {}", doneFilePath.getFileName());
+            //Files.createFile(doneFilePath);
+            // logger.info("Created done marker file: {}", doneFilePath.getFileName());
         } catch (IOException e) {
             logger.error("Failed to create done marker file: {}", filePath.getFileName(), e);
         }
