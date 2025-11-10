@@ -1,8 +1,10 @@
 package teranet.mapdev.ingest.service;
 
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import teranet.mapdev.ingest.config.CsvProcessingConfig;
 import teranet.mapdev.ingest.config.DatabaseConfig;
 import teranet.mapdev.ingest.config.IngestConfig;
 
@@ -13,33 +15,40 @@ import java.util.regex.Pattern;
  * Service for routing files to target tables based on filename patterns
  * 
  * Supports legacy Polaris file naming conventions:
- * - PM162 -> PM1 (Property Management table 1)
- * - PM262 -> PM2 (Property Management table 2)
- * - IM362 -> IM3 (Image Management table 3)
+ * - PM162 -> staging_pm1 (Property Management table 1)
+ * - PM262 -> staging_pm2 (Property Management table 2)
+ * - IM362 -> staging_im3 (Image Management table 3)
  * 
  * The regex pattern and template are configurable via application.properties:
  * - ingest.filename-routing.regex: Pattern to extract components from filename
  * - ingest.filename-routing.template: Template to construct table name from regex groups
+ * - csv.processing.staging-table-prefix: Prefix to add before table name (e.g., "staging")
  */
 @Service
-@Slf4j
 public class FilenameRouterService {
 
+    private static final Logger log = LoggerFactory.getLogger(FilenameRouterService.class);
+    
     private final DatabaseConfig databaseConfig;
     private final IngestConfig ingestConfig;
+    private final CsvProcessingConfig csvProcessingConfig;
     private final Pattern routingPattern;
     
-    public FilenameRouterService(DatabaseConfig databaseConfig, IngestConfig ingestConfig) {
+    public FilenameRouterService(DatabaseConfig databaseConfig, 
+                                  IngestConfig ingestConfig,
+                                  CsvProcessingConfig csvProcessingConfig) {
         this.databaseConfig = databaseConfig;
         this.ingestConfig = ingestConfig;
+        this.csvProcessingConfig = csvProcessingConfig;
         
         // Compile the routing pattern from configuration
         String regex = ingestConfig.getFilenameRouting().getRegex();
         this.routingPattern = Pattern.compile(regex);
         
-        log.info("FilenameRouter initialized with pattern: {}, template: {}", 
+        log.info("FilenameRouter initialized with pattern: {}, template: {}, prefix: {}", 
                 regex, 
-                ingestConfig.getFilenameRouting().getTemplate());
+                ingestConfig.getFilenameRouting().getTemplate(),
+                csvProcessingConfig.getStagingTablePrefix());
     }
     
     /**
@@ -50,10 +59,10 @@ public class FilenameRouterService {
     }
     
     /**
-     * Resolve filename to target table name
+     * Resolve filename to target table name with staging prefix
      * 
      * @param filename The filename to resolve (with or without extension)
-     * @return The target table name
+     * @return The target table name with staging prefix (e.g., "staging_pm1")
      * @throws IllegalArgumentException if filename doesn't match the routing pattern
      */
     public String resolveTableName(String filename) {
@@ -81,6 +90,15 @@ public class FilenameRouterService {
         for (int i = 1; i <= matcher.groupCount(); i++) {
             String groupValue = matcher.group(i);
             tableName = tableName.replace("${g" + i + "}", groupValue);
+        }
+        
+        // Convert table name to lowercase for PostgreSQL compatibility
+        tableName = tableName.toLowerCase();
+        
+        // Add staging prefix from configuration (e.g., "staging_")
+        String stagingPrefix = csvProcessingConfig.getStagingTablePrefix();
+        if (stagingPrefix != null && !stagingPrefix.isEmpty()) {
+            tableName = stagingPrefix + "_" + tableName;
         }
         
         log.debug("Resolved filename '{}' to table name '{}'", filename, tableName);

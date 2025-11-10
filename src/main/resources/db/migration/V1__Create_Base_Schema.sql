@@ -5,6 +5,7 @@
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS staging;
 CREATE SCHEMA IF NOT EXISTS core;
+CREATE SCHEMA IF NOT EXISTS title_d_app;
 
 -- ================================
 -- ENUMS AND TYPES

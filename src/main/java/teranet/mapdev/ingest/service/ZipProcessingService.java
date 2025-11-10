@@ -63,7 +63,7 @@ public class ZipProcessingService {
             
             // Analyze each CSV file
             for (Path csvPath : csvFiles) {
-                ExtractedFileInfo fileInfo = analyzeCsvFile(csvPath);
+                ExtractedFileInfo fileInfo = analyzeCsvFile(csvPath, extractionPath);
                 if (fileInfo != null) {
                     extractedFiles.add(fileInfo);
                 }
@@ -145,16 +145,39 @@ public class ZipProcessingService {
     }
 
     /**
-     * Finds all CSV files in the extracted directory
+     * Finds all CSV/TSV files and files matching routing patterns in the extracted directory
+     * Accepts files with .csv, .tsv extensions or files matching PM/IM naming patterns (no extension)
+     * 
      * @param extractionPath the extraction directory
-     * @return list of CSV file paths
+     * @return list of data file paths
      */
     private List<Path> findCsvFiles(Path extractionPath) throws IOException {
         List<Path> csvFiles = new ArrayList<>();
         
+        // Pattern to match PM/IM files: PM162, IM262, etc. (2 letters + digits)
+        java.util.regex.Pattern routingPattern = java.util.regex.Pattern.compile("^([A-Z]{2})(\\d+)$");
+        
         Files.walk(extractionPath)
             .filter(Files::isRegularFile)
-            .filter(path -> path.toString().toLowerCase().endsWith(".csv"))
+            .filter(path -> {
+                String fileName = path.getFileName().toString();
+                String lowerFileName = fileName.toLowerCase();
+                
+                // Accept .csv or .tsv files
+                if (lowerFileName.endsWith(".csv") || lowerFileName.endsWith(".tsv")) {
+                    return true;
+                }
+                
+                // Accept files matching PM/IM routing pattern (no extension)
+                // Remove any extension first to check base name
+                String baseName = fileName;
+                int lastDot = fileName.lastIndexOf('.');
+                if (lastDot > 0) {
+                    baseName = fileName.substring(0, lastDot);
+                }
+                
+                return routingPattern.matcher(baseName).matches();
+            })
             .forEach(csvFiles::add);
         
         logger.info("Found {} CSV files in extracted content", csvFiles.size());
@@ -164,11 +187,15 @@ public class ZipProcessingService {
     /**
      * Analyzes a single CSV file to extract metadata
      * @param csvPath path to the CSV file
+     * @param extractionPath root extraction directory for computing relative path
      * @return ExtractedFileInfo with file analysis
      */
-    private ExtractedFileInfo analyzeCsvFile(Path csvPath) {
+    private ExtractedFileInfo analyzeCsvFile(Path csvPath, Path extractionPath) {
         try {
-            String filename = csvPath.getFileName().toString();
+            // Get relative path from extraction directory (preserves folder structure)
+            String relativePath = extractionPath.relativize(csvPath).toString();
+            // Normalize path separators to forward slashes for consistency
+            String filename = relativePath.replace('\\', '/');
             long fileSize = Files.size(csvPath);
             
             // Extract headers from CSV file

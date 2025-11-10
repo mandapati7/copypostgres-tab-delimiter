@@ -37,6 +37,9 @@ public class BatchProcessingService {
     private CsvProcessingService csvProcessingService;
     
     @Autowired
+    private DelimitedFileProcessingService delimitedFileProcessingService;
+    
+    @Autowired
     private IngestionManifestService manifestService;
     
     @Autowired
@@ -207,6 +210,7 @@ public class BatchProcessingService {
 
     /**
      * Extract ZIP file to temporary directory for batch processing
+     * Preserves directory structure and extracts files matching CSV or PM/IM pattern
      * @param zipFile the ZIP file to extract
      * @param batchId the batch ID for organization
      * @return path to extracted directory
@@ -218,18 +222,32 @@ public class BatchProcessingService {
             ZipEntry entry;
             
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                if (!entry.isDirectory() && entry.getName().toLowerCase().endsWith(".csv")) {
-                    Path csvFile = batchDir.resolve(new File(entry.getName()).getName());
+                if (!entry.isDirectory()) {
+                    String entryName = entry.getName();
+                    String fileName = new File(entryName).getName();
                     
-                    try (FileOutputStream fileOutputStream = new FileOutputStream(csvFile.toFile())) {
-                        byte[] buffer = new byte[8192];
-                        int length;
-                        while ((length = zipInputStream.read(buffer)) != -1) {
-                            fileOutputStream.write(buffer, 0, length);
+                    // Check if file is CSV or matches PM/IM pattern
+                    boolean isCsv = fileName.toLowerCase().endsWith(".csv") || 
+                                   fileName.toLowerCase().endsWith(".tsv");
+                    boolean isDataFile = fileName.matches("^([A-Z]{2})(\\d+)$");
+                    
+                    if (isCsv || isDataFile) {
+                        // Preserve directory structure
+                        Path targetPath = batchDir.resolve(entryName);
+                        
+                        // Create parent directories if needed
+                        Files.createDirectories(targetPath.getParent());
+                        
+                        try (FileOutputStream fileOutputStream = new FileOutputStream(targetPath.toFile())) {
+                            byte[] buffer = new byte[8192];
+                            int length;
+                            while ((length = zipInputStream.read(buffer)) != -1) {
+                                fileOutputStream.write(buffer, 0, length);
+                            }
                         }
+                        
+                        logger.debug("Extracted file for batch processing: {}", entryName);
                     }
-                    
-                    logger.debug("Extracted CSV file for batch processing: {}", entry.getName());
                 }
                 
                 zipInputStream.closeEntry();
@@ -282,7 +300,8 @@ public class BatchProcessingService {
     }
 
     /**
-     * Process a single CSV file to staging area
+     * Process a single CSV file to staging area using DelimitedFileProcessingService
+     * This routes files to existing staging tables (e.g., PM162 -> staging_pm1)
      * @param csvFile the CSV file to process
      * @param batchId the batch identifier
      * @param parentBatchId the parent batch identifier (for ZIP processing)
@@ -295,8 +314,16 @@ public class BatchProcessingService {
         logger.info("Processing CSV file to staging: {}", filename);
         
         try {
-            // Process CSV to staging with parent batch ID linking
-            IngestionManifest manifest = csvProcessingService.processCsvToStaging(csvFile, parentBatchId);
+            // Process delimited file with routing to existing staging tables
+            // Format: tsv (tab-delimited)
+            // Has headers: false
+            // Route by filename: true (PM162 -> staging_pm1, IM262 -> staging_im2)
+            IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(
+                csvFile, 
+                "tsv",          // Tab-delimited format
+                false,          // No headers
+                true            // Route by filename (PM162 -> staging_pm1)
+            );
             
             long processingTime = System.currentTimeMillis() - startTime;
             // Get table name from manifest (which now includes batch_id suffix)
