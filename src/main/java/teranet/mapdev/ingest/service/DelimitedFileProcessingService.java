@@ -163,9 +163,10 @@ public class DelimitedFileProcessingService {
             // Step 5: Validate and fix file BEFORE loading (if validation is enabled)
             InputStream fileStreamToLoad;
             String filePattern = extractFilePattern(file.getOriginalFilename());
+            FileValidationService.ValidationResult validationResult = null;
 
             try {
-                FileValidationService.ValidationResult validationResult = fileValidationService.validateAndFix(
+                validationResult = fileValidationService.validateAndFix(
                         file.getInputStream(),
                         file.getOriginalFilename(),
                         filePattern,
@@ -178,6 +179,9 @@ public class DelimitedFileProcessingService {
                             validationResult.getIssues().size());
                     log.error(errorMsg);
 
+                    // Update data quality metrics before marking as failed
+                    updateDataQualityMetrics(manifest, validationResult);
+
                     manifest.markAsFailed(errorMsg,
                             "See file_validation_issues table for details (batch_id: " + manifest.getBatchId() + ")");
                     manifestService.update(manifest);
@@ -185,8 +189,10 @@ public class DelimitedFileProcessingService {
                     throw new IllegalArgumentException(errorMsg);
                 }
 
-                // Log validation summary if issues were found
+                // Update data quality metrics if issues were found
                 if (validationResult.hasIssues()) {
+                    updateDataQualityMetrics(manifest, validationResult);
+
                     long autoFixedCount = validationResult.getIssues().stream()
                             .filter(FileValidationIssue::getAutoFixed)
                             .count();
@@ -197,6 +203,9 @@ public class DelimitedFileProcessingService {
                             validationResult.getIssues().size(),
                             autoFixedCount,
                             manifest.getBatchId());
+                } else {
+                    // No validation issues - mark as CLEAN
+                    manifest.updateDataQualityMetrics(0, 0, 0);
                 }
 
                 // Use the validated/fixed file stream for loading
@@ -211,7 +220,7 @@ public class DelimitedFileProcessingService {
             long rowCount = loadDataToCopy(fileStreamToLoad, targetTable, columnOrder, format, hasHeaders,
                     manifest.getBatchId());
 
-            // Step 7: Update manifest with success
+            // Step 7: Update manifest with success (data quality already set in Step 5)
             completeManifest(manifest, rowCount, System.currentTimeMillis() - startTime);
 
             log.info("Successfully processed {} rows from {} to {} in {} ms",
@@ -568,5 +577,50 @@ public class DelimitedFileProcessingService {
 
         // If no pattern found, return the name without extension
         return nameWithoutExt;
+    }
+
+    /**
+     * Update manifest with data quality metrics from validation result
+     * 
+     * @param manifest         The manifest to update
+     * @param validationResult The validation result containing issues
+     */
+    private void updateDataQualityMetrics(
+            IngestionManifest manifest,
+            FileValidationService.ValidationResult validationResult) {
+
+        if (validationResult == null || !validationResult.hasIssues()) {
+            manifest.updateDataQualityMetrics(0, 0, 0);
+            return;
+        }
+
+        // Count issues by severity
+        long autoFixedCount = 0;
+        int warningCount = 0;
+        int errorCount = 0;
+
+        for (FileValidationIssue issue : validationResult.getIssues()) {
+            if (issue.getAutoFixed() != null && issue.getAutoFixed()) {
+                autoFixedCount++;
+            }
+
+            if (issue.getSeverity() != null) {
+                switch (issue.getSeverity()) {
+                    case WARNING:
+                        warningCount++;
+                        break;
+                    case FileValidationIssue.Severity.ERROR:
+                    case CRITICAL:
+                        errorCount++;
+                        break;
+                    default:
+                        // INFO or others - no action
+                        break;
+                }
+            }
+        }
+
+        // Update manifest with metrics
+        manifest.updateDataQualityMetrics(autoFixedCount, warningCount, errorCount);
     }
 }
