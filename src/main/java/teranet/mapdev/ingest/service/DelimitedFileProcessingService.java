@@ -87,84 +87,108 @@ public class DelimitedFileProcessingService {
                 file.getOriginalFilename(), format, hasHeaders, routeByFilename);
 
         long startTime = System.currentTimeMillis();
+        IngestionManifest manifest = null;
 
-        // Step 1: Check for duplicate (idempotency)
-        String checksum = fileChecksumService.calculateFileChecksum(file);
-        IngestionManifest existingManifest = checkForDuplicate(checksum);
-        if (existingManifest != null) {
-            log.info("File already processed: {}", file.getOriginalFilename());
-            return existingManifest;
-        }
+        try {
+            // Step 1: Check for duplicate (idempotency)
+            String checksum = fileChecksumService.calculateFileChecksum(file);
+            IngestionManifest existingManifest = checkForDuplicate(checksum);
+            if (existingManifest != null) {
+                log.info("File already processed: {}", file.getOriginalFilename());
+                return existingManifest;
+            }
 
-        // Step 2: Determine target table
-        String targetTable;
+            // Step 2: Determine target table
+            String targetTable;
 
-        if (routeByFilename) {
-            // Route to table based on filename (e.g., PM162 -> staging_pm1)
-            // FilenameRouterService already adds the staging prefix, so use it directly
-            targetTable = filenameRouterService.resolveTableName(file.getOriginalFilename());
+            if (routeByFilename) {
+                // Route to table based on filename (e.g., PM162 -> staging_pm1)
+                // FilenameRouterService already adds the staging prefix, so use it directly
+                targetTable = filenameRouterService.resolveTableName(file.getOriginalFilename());
 
-            log.info("Routing {} to {}", file.getOriginalFilename(), targetTable);
-        } else {
-            // Use default schema and staging table pattern
-            targetTable = csvProcessingConfig.getStagingTablePrefix() + "_"
-                    + sanitizeTableName(file.getOriginalFilename());
-
-            log.info("Using staging table: {}", targetTable);
-        }
-
-        // Step 3: Get column order from database schema
-        List<String> columnOrder;
-        if (hasHeaders) {
-            // Extract columns from file header
-            columnOrder = extractHeadersFromFile(file);
-            log.debug("Extracted {} columns from file headers", columnOrder.size());
-        } else {
-            // Get columns from database table schema (excluding metadata columns)
-            List<String> allColumns = columnOrderResolverService.getColumnOrder(targetTable);
-            
-            // Filter out metadata columns that are auto-generated (not in source file)
-            List<String> dataColumns = allColumns.stream()
-                    .filter(col -> !col.equals("batch_id") && 
-                                   !col.equals("row_number") && 
-                                   !col.equals("loaded_at"))
-                    .toList();
-            
-            // Count actual fields in the file to match column count
-            int fieldCount = countFieldsInFile(file, format);
-            log.debug("File contains {} fields, table has {} data columns", fieldCount, dataColumns.size());
-            
-            // Use only the columns that exist in the file (first N columns)
-            if (fieldCount < dataColumns.size()) {
-                columnOrder = dataColumns.subList(0, fieldCount);
-                log.info("Using first {} columns from table {} (file has fewer fields than table columns)", 
-                         fieldCount, targetTable);
-            } else if (fieldCount > dataColumns.size()) {
-                throw new IllegalArgumentException(
-                    String.format("File has %d fields but table %s only has %d data columns", 
-                                  fieldCount, targetTable, dataColumns.size()));
+                log.info("Routing {} to {}", file.getOriginalFilename(), targetTable);
             } else {
-                columnOrder = dataColumns;
+                // Use default schema and staging table pattern
+                targetTable = csvProcessingConfig.getStagingTablePrefix() + "_"
+                        + sanitizeTableName(file.getOriginalFilename());
+
+                log.info("Using staging table: {}", targetTable);
+            }
+
+            // Step 3: Get column order from database schema
+            List<String> columnOrder;
+            if (hasHeaders) {
+                // Extract columns from file header
+                columnOrder = extractHeadersFromFile(file);
+                log.debug("Extracted {} columns from file headers", columnOrder.size());
+            } else {
+                // Get columns from database table schema (excluding metadata columns)
+                List<String> allColumns = columnOrderResolverService.getColumnOrder(targetTable);
+                
+                // Filter out metadata columns that are auto-generated (not in source file)
+                List<String> dataColumns = allColumns.stream()
+                        .filter(col -> !col.equals("batch_id") && 
+                                       !col.equals("row_number") && 
+                                       !col.equals("loaded_at"))
+                        .toList();
+                
+                // Count actual fields in the file to match column count
+                int fieldCount = countFieldsInFile(file, format);
+                log.debug("File contains {} fields, table has {} data columns", fieldCount, dataColumns.size());
+                
+                // Use only the columns that exist in the file (first N columns)
+                if (fieldCount < dataColumns.size()) {
+                    columnOrder = dataColumns.subList(0, fieldCount);
+                    log.info("Using first {} columns from table {} (file has fewer fields than table columns)", 
+                             fieldCount, targetTable);
+                } else if (fieldCount > dataColumns.size()) {
+                    throw new IllegalArgumentException(
+                        String.format("File has %d fields but table %s only has %d data columns", 
+                                      fieldCount, targetTable, dataColumns.size()));
+                } else {
+                    columnOrder = dataColumns;
+                }
+                
+                log.debug("Retrieved {} data columns from table {} (excluded metadata columns)", 
+                         columnOrder.size(), targetTable);
+            }
+
+            // Step 4: Create manifest
+            manifest = createManifest(file, checksum, targetTable);
+
+            // Step 5: Load data using PostgreSQL COPY
+            long rowCount = loadDataToCopy(file, targetTable, columnOrder, format, hasHeaders, manifest.getBatchId());
+
+            // Step 6: Update manifest with success
+            completeManifest(manifest, rowCount, System.currentTimeMillis() - startTime);
+
+            log.info("Successfully processed {} rows from {} to {} in {} ms",
+                    rowCount, file.getOriginalFilename(), targetTable,
+                    System.currentTimeMillis() - startTime);
+
+            return manifest;
+            
+        } catch (Exception e) {
+            log.error("Failed to process delimited file: {}", file.getOriginalFilename(), e);
+            
+            // CRITICAL: Update manifest status to FAILED to prevent stuck PROCESSING records
+            if (manifest != null) {
+                try {
+                    // Use helper method to set status, error details, and duration
+                    manifest.markAsFailed(e.getMessage(), getStackTraceAsString(e));
+                    
+                    // Force update to ensure status change is persisted
+                    manifestService.update(manifest);
+                    log.info("Updated manifest with FAILED status for batch: {}", manifest.getBatchId());
+                } catch (Exception updateError) {
+                    log.error("CRITICAL ERROR: Failed to update manifest with FAILED status. " +
+                             "Record will remain stuck in PROCESSING state: {}", updateError.getMessage(), updateError);
+                }
             }
             
-            log.debug("Retrieved {} data columns from table {} (excluded metadata columns)", 
-                     columnOrder.size(), targetTable);
+            // Re-throw to propagate error to caller
+            throw e;
         }
-
-        // Step 4: Create manifest
-        IngestionManifest manifest = createManifest(file, checksum, targetTable);
-
-        // Step 5: Load data using PostgreSQL COPY
-        long rowCount = loadDataToCopy(file, targetTable, columnOrder, format, hasHeaders, manifest.getBatchId());
-
-        // Step 6: Update manifest with success
-        completeManifest(manifest, rowCount, System.currentTimeMillis() - startTime);
-
-        log.info("Successfully processed {} rows from {} to {} in {} ms",
-                rowCount, file.getOriginalFilename(), targetTable,
-                System.currentTimeMillis() - startTime);
-
-        return manifest;
     }
 
     /**
@@ -445,5 +469,15 @@ public class DelimitedFileProcessingService {
 
         // Ensure lowercase
         return name.toLowerCase();
+    }
+
+    /**
+     * Convert exception stack trace to string for error details
+     */
+    private String getStackTraceAsString(Exception e) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+        e.printStackTrace(pw);
+        return sw.toString();
     }
 }
