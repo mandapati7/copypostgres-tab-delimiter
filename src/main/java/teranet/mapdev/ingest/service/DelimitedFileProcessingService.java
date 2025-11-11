@@ -9,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import teranet.mapdev.ingest.config.CsvProcessingConfig;
 import teranet.mapdev.ingest.config.IngestConfig;
 import teranet.mapdev.ingest.model.IngestionManifest;
+import teranet.mapdev.ingest.model.FileValidationIssue;
 
 import javax.sql.DataSource;
 import java.io.BufferedReader;
@@ -42,7 +43,7 @@ import java.util.regex.Pattern;
 public class DelimitedFileProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(DelimitedFileProcessingService.class);
-    
+
     private final DataSource dataSource;
     private final IngestConfig ingestConfig;
     private final CsvProcessingConfig csvProcessingConfig;
@@ -50,6 +51,7 @@ public class DelimitedFileProcessingService {
     private final IngestionManifestService manifestService;
     private final ColumnOrderResolverService columnOrderResolverService;
     private final FilenameRouterService filenameRouterService;
+    private final FileValidationService fileValidationService;
 
     public DelimitedFileProcessingService(
             DataSource dataSource,
@@ -58,7 +60,8 @@ public class DelimitedFileProcessingService {
             IngestionManifestService manifestService,
             ColumnOrderResolverService columnOrderResolverService,
             FilenameRouterService filenameRouterService,
-            CsvProcessingConfig csvProcessingConfig) {
+            CsvProcessingConfig csvProcessingConfig,
+            FileValidationService fileValidationService) {
         this.dataSource = dataSource;
         this.ingestConfig = ingestConfig;
         this.fileChecksumService = fileChecksumService;
@@ -66,6 +69,7 @@ public class DelimitedFileProcessingService {
         this.columnOrderResolverService = columnOrderResolverService;
         this.filenameRouterService = filenameRouterService;
         this.csvProcessingConfig = csvProcessingConfig;
+        this.fileValidationService = fileValidationService;
     }
 
     /**
@@ -124,42 +128,90 @@ public class DelimitedFileProcessingService {
             } else {
                 // Get columns from database table schema (excluding metadata columns)
                 List<String> allColumns = columnOrderResolverService.getColumnOrder(targetTable);
-                
+
                 // Filter out metadata columns that are auto-generated (not in source file)
                 List<String> dataColumns = allColumns.stream()
-                        .filter(col -> !col.equals("batch_id") && 
-                                       !col.equals("row_number") && 
-                                       !col.equals("loaded_at"))
+                        .filter(col -> !col.equals("batch_id") &&
+                                !col.equals("row_number") &&
+                                !col.equals("loaded_at"))
                         .toList();
-                
+
                 // Count actual fields in the file to match column count
                 int fieldCount = countFieldsInFile(file, format);
                 log.debug("File contains {} fields, table has {} data columns", fieldCount, dataColumns.size());
-                
+
                 // Use only the columns that exist in the file (first N columns)
                 if (fieldCount < dataColumns.size()) {
                     columnOrder = dataColumns.subList(0, fieldCount);
-                    log.info("Using first {} columns from table {} (file has fewer fields than table columns)", 
-                             fieldCount, targetTable);
+                    log.info("Using first {} columns from table {} (file has fewer fields than table columns)",
+                            fieldCount, targetTable);
                 } else if (fieldCount > dataColumns.size()) {
                     throw new IllegalArgumentException(
-                        String.format("File has %d fields but table %s only has %d data columns", 
-                                      fieldCount, targetTable, dataColumns.size()));
+                            String.format("File has %d fields but table %s only has %d data columns",
+                                    fieldCount, targetTable, dataColumns.size()));
                 } else {
                     columnOrder = dataColumns;
                 }
-                
-                log.debug("Retrieved {} data columns from table {} (excluded metadata columns)", 
-                         columnOrder.size(), targetTable);
+
+                log.debug("Retrieved {} data columns from table {} (excluded metadata columns)",
+                        columnOrder.size(), targetTable);
             }
 
             // Step 4: Create manifest
             manifest = createManifest(file, checksum, targetTable);
 
-            // Step 5: Load data using PostgreSQL COPY
-            long rowCount = loadDataToCopy(file, targetTable, columnOrder, format, hasHeaders, manifest.getBatchId());
+            // Step 5: Validate and fix file BEFORE loading (if validation is enabled)
+            InputStream fileStreamToLoad;
+            String filePattern = extractFilePattern(file.getOriginalFilename());
 
-            // Step 6: Update manifest with success
+            try {
+                FileValidationService.ValidationResult validationResult = fileValidationService.validateAndFix(
+                        file.getInputStream(),
+                        file.getOriginalFilename(),
+                        filePattern,
+                        manifest.getBatchId());
+
+                // Check if file was rejected due to critical validation issues
+                if (validationResult.isRejected()) {
+                    String errorMsg = String.format(
+                            "File rejected: %d critical validation issues found",
+                            validationResult.getIssues().size());
+                    log.error(errorMsg);
+
+                    manifest.markAsFailed(errorMsg,
+                            "See file_validation_issues table for details (batch_id: " + manifest.getBatchId() + ")");
+                    manifestService.update(manifest);
+
+                    throw new IllegalArgumentException(errorMsg);
+                }
+
+                // Log validation summary if issues were found
+                if (validationResult.hasIssues()) {
+                    long autoFixedCount = validationResult.getIssues().stream()
+                            .filter(FileValidationIssue::getAutoFixed)
+                            .count();
+
+                    log.warn("File {} processed with {} validation issues ({} auto-fixed). " +
+                            "See file_validation_issues table for details (batch_id: {})",
+                            file.getOriginalFilename(),
+                            validationResult.getIssues().size(),
+                            autoFixedCount,
+                            manifest.getBatchId());
+                }
+
+                // Use the validated/fixed file stream for loading
+                fileStreamToLoad = validationResult.getFixedInputStream();
+
+            } catch (IOException ioEx) {
+                log.error("Validation failed for file: {}", file.getOriginalFilename(), ioEx);
+                throw new RuntimeException("File validation error: " + ioEx.getMessage(), ioEx);
+            }
+
+            // Step 6: Load data using PostgreSQL COPY (with validated file stream)
+            long rowCount = loadDataToCopy(fileStreamToLoad, targetTable, columnOrder, format, hasHeaders,
+                    manifest.getBatchId());
+
+            // Step 7: Update manifest with success
             completeManifest(manifest, rowCount, System.currentTimeMillis() - startTime);
 
             log.info("Successfully processed {} rows from {} to {} in {} ms",
@@ -167,25 +219,26 @@ public class DelimitedFileProcessingService {
                     System.currentTimeMillis() - startTime);
 
             return manifest;
-            
+
         } catch (Exception e) {
             log.error("Failed to process delimited file: {}", file.getOriginalFilename(), e);
-            
-            // CRITICAL: Update manifest status to FAILED to prevent stuck PROCESSING records
+
+            // CRITICAL: Update manifest status to FAILED to prevent stuck PROCESSING
+            // records
             if (manifest != null) {
                 try {
                     // Use helper method to set status, error details, and duration
                     manifest.markAsFailed(e.getMessage(), getStackTraceAsString(e));
-                    
+
                     // Force update to ensure status change is persisted
                     manifestService.update(manifest);
                     log.info("Updated manifest with FAILED status for batch: {}", manifest.getBatchId());
                 } catch (Exception updateError) {
                     log.error("CRITICAL ERROR: Failed to update manifest with FAILED status. " +
-                             "Record will remain stuck in PROCESSING state: {}", updateError.getMessage(), updateError);
+                            "Record will remain stuck in PROCESSING state: {}", updateError.getMessage(), updateError);
                 }
             }
-            
+
             // Re-throw to propagate error to caller
             throw e;
         }
@@ -273,7 +326,7 @@ public class DelimitedFileProcessingService {
      * @return Number of rows loaded
      */
     private long loadDataToCopy(
-            MultipartFile file,
+            InputStream inputStream,
             String tableName,
             List<String> columns,
             String format,
@@ -301,9 +354,9 @@ public class DelimitedFileProcessingService {
                 org.postgresql.core.BaseConnection pgConn = conn.unwrap(org.postgresql.core.BaseConnection.class);
                 org.postgresql.copy.CopyManager copyManager = new org.postgresql.copy.CopyManager(pgConn);
 
-                try (java.io.InputStream inputStream = fileChecksumService.getDecompressedInputStream(file);
-                        java.io.Reader reader = new java.io.InputStreamReader(inputStream,
-                                java.nio.charset.StandardCharsets.UTF_8)) {
+                // Use the provided input stream (which may be validated/fixed stream)
+                try (java.io.Reader reader = new java.io.InputStreamReader(inputStream,
+                        java.nio.charset.StandardCharsets.UTF_8)) {
 
                     rowCount = copyManager.copyIn(copyCommand, reader);
                     log.info("COPY loaded {} rows", rowCount);
@@ -420,27 +473,27 @@ public class DelimitedFileProcessingService {
      * Count the number of fields in the first data line of the file
      * This helps match file structure to table columns when no headers present
      * 
-     * @param file The file to analyze
+     * @param file   The file to analyze
      * @param format The delimiter format (csv, tsv, etc.)
      * @return Number of tab-delimited fields in first line
      */
     private int countFieldsInFile(MultipartFile file, String format) throws IOException {
         char delimiter = getDelimiter(format);
-        
+
         try (InputStream is = file.getInputStream();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-            
+                BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+
             String firstLine = reader.readLine();
             if (firstLine == null || firstLine.isEmpty()) {
                 return 0;
             }
-            
+
             // Split by delimiter and count fields
             String[] fields = firstLine.split(Pattern.quote(String.valueOf(delimiter)), -1);
             return fields.length;
         }
     }
-    
+
     /**
      * Get delimiter character based on format string
      */
@@ -479,5 +532,41 @@ public class DelimitedFileProcessingService {
         java.io.PrintWriter pw = new java.io.PrintWriter(sw);
         e.printStackTrace(pw);
         return sw.toString();
+    }
+
+    /**
+     * Extract file pattern from filename for validation rule lookup
+     * 
+     * Examples:
+     * - "IM262" -> "IM2"
+     * - "PM362" -> "PM3"
+     * - "IM162.txt" -> "IM1"
+     * - "PM1_data.tsv" -> "PM1"
+     * 
+     * @param fileName The original filename
+     * @return The file pattern (e.g., "PM3", "IM2") or the filename if pattern not
+     *         found
+     */
+    private String extractFilePattern(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return fileName;
+        }
+
+        // Remove extension first
+        String nameWithoutExt = fileName;
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot > 0) {
+            nameWithoutExt = fileName.substring(0, lastDot);
+        }
+
+        // Check if filename matches pattern like IM262, PM362, etc.
+        // Pattern: (IM|PM) followed by digits
+        if (nameWithoutExt.matches("(IM|PM)\\d+.*")) {
+            // Extract first 3 characters (e.g., "IM2", "PM3")
+            return nameWithoutExt.substring(0, 3);
+        }
+
+        // If no pattern found, return the name without extension
+        return nameWithoutExt;
     }
 }

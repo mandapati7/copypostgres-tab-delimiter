@@ -1,0 +1,56 @@
+package teranet.mapdev.ingest.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.LocalDateTime;
+
+/**
+ * Stores validation rules for different file types
+ * This allows dynamic configuration without code changes
+ */
+@Entity
+@Table(name = "file_validation_rules")
+@Getter
+@Setter
+public class FileValidationRule {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "file_pattern", nullable = false, unique = true, length = 100)
+    private String filePattern; // e.g., "PM3", "IM2", "PM5"
+
+    @Column(name = "table_name", length = 100)
+    private String tableName; // e.g., "staging_pm3"
+
+    @Column(name = "expected_tab_count", nullable = false)
+    private Integer expectedTabCount; // Expected number of tabs per row
+
+    @Column(name = "validation_enabled", nullable = false)
+    private Boolean validationEnabled = true;
+
+    @Column(name = "auto_fix_enabled", nullable = false)
+    private Boolean autoFixEnabled = false; // Whether to automatically fix issues
+
+    @Column(name = "reject_on_violation", nullable = false)
+    private Boolean rejectOnViolation = false; // Whether to reject the entire file
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Column(name = "created_by", length = 100)
+    private String createdBy;
+}
