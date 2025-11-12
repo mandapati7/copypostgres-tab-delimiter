@@ -40,6 +40,15 @@ public class FileValidationRule {
     @Column(name = "reject_on_violation", nullable = false)
     private Boolean rejectOnViolation = false; // Whether to reject the entire file
 
+    @Column(name = "replace_control_chars", nullable = false)
+    private Boolean replaceControlChars = false; // Replace control characters with asterisk
+
+    @Column(name = "replace_non_latin_chars", nullable = false)
+    private Boolean replaceNonLatinChars = false; // Replace non-BASIC_LATIN characters with asterisk
+
+    @Column(name = "collapse_consecutive_replaced", nullable = false)
+    private Boolean collapseConsecutiveReplaced = false; // Collapse consecutive replaced chars to single asterisk
+
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 

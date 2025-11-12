@@ -20,6 +20,9 @@ import java.util.regex.Pattern;
  * This service:
  * - Validates tab counts per row based on configurable rules
  * - Automatically fixes excess tabs by converting to spaces
+ * - Cleans data by replacing control characters with asterisk (*)
+ * - Replaces non-BASIC_LATIN characters with asterisk (*)
+ * - Collapses consecutive replaced characters to single asterisk
  * - Tracks all validation issues for reporting
  * - Generates validation reports for senders
  */
@@ -29,6 +32,16 @@ public class FileValidationService {
 
     private final FileValidationRuleRepository ruleRepository;
     private final FileValidationIssueRepository issueRepository;
+
+    // Regex patterns for efficient character replacement
+    // Control characters: 0x00-0x1F (except \t, \n, \r) and 0x7F (DEL)
+    private static final Pattern CONTROL_CHAR_PATTERN = Pattern.compile(
+            "[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]");
+
+    // Non-BASIC_LATIN: any character with codepoint > 0x7F
+    // Negative lookahead to preserve tabs and standard whitespace
+    private static final Pattern NON_BASIC_LATIN_PATTERN = Pattern.compile(
+            "[^\\x00-\\x7F]");
 
     public FileValidationService(
             FileValidationRuleRepository ruleRepository,
@@ -78,26 +91,71 @@ public class FileValidationService {
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
 
-                // Count tabs in the line
-                int tabCount = countTabs(line);
+                // Store original line for reporting
+                String originalLine = line;
+                String processedLine = line;
+                List<FileValidationIssue> lineIssues = new ArrayList<>();
+
+                // Step 1: Apply data cleaning rules first
+                if (rule.getReplaceControlChars() || rule.getReplaceNonLatinChars()
+                        || rule.getCollapseConsecutiveReplaced()) {
+                    DataCleaningResult cleaningResult = cleanLineData(
+                            processedLine,
+                            rule.getReplaceControlChars(),
+                            rule.getReplaceNonLatinChars(),
+                            rule.getCollapseConsecutiveReplaced());
+
+                    processedLine = cleaningResult.cleanedLine;
+
+                    // Record data cleaning issues
+                    if (cleaningResult.controlCharsReplaced > 0) {
+                        FileValidationIssue issue = createDataCleaningIssue(
+                                batchId, fileName, lineNumber, originalLine, processedLine,
+                                FileValidationIssue.IssueType.CONTROL_CHARACTERS,
+                                cleaningResult.controlCharsReplaced,
+                                "control character(s)");
+                        lineIssues.add(issue);
+                    }
+
+                    if (cleaningResult.nonLatinCharsReplaced > 0) {
+                        FileValidationIssue issue = createDataCleaningIssue(
+                                batchId, fileName, lineNumber, originalLine, processedLine,
+                                FileValidationIssue.IssueType.NON_LATIN_CHARACTERS,
+                                cleaningResult.nonLatinCharsReplaced,
+                                "non-BASIC_LATIN character(s)");
+                        lineIssues.add(issue);
+                    }
+
+                    if (cleaningResult.consecutiveCollapsed > 0) {
+                        FileValidationIssue issue = createDataCleaningIssue(
+                                batchId, fileName, lineNumber, originalLine, processedLine,
+                                FileValidationIssue.IssueType.CONSECUTIVE_REPLACED_CHARS,
+                                cleaningResult.consecutiveCollapsed,
+                                "consecutive replaced character(s) collapsed");
+                        lineIssues.add(issue);
+                    }
+                }
+
+                // Step 2: Count tabs in the (possibly cleaned) line
+                int tabCount = countTabs(processedLine);
 
                 if (tabCount != rule.getExpectedTabCount()) {
-                    // Create validation issue
+                    // Create tab validation issue
                     FileValidationIssue issue = createIssue(
                             batchId, fileName, lineNumber, tabCount,
-                            rule.getExpectedTabCount(), line);
+                            rule.getExpectedTabCount(), processedLine);
 
                     if (tabCount > rule.getExpectedTabCount() && rule.getAutoFixEnabled()) {
                         // Fix excess tabs by converting extra tabs to spaces
-                        String fixedLine = fixExcessTabs(line, rule.getExpectedTabCount());
+                        processedLine = fixExcessTabs(processedLine, rule.getExpectedTabCount());
                         issue.setAutoFixed(true);
-                        issue.setCorrectedLine(fixedLine);
+                        issue.setCorrectedLine(processedLine);
                         issue.setFixDescription(
                                 String.format("Converted %d excess tabs to spaces",
                                         tabCount - rule.getExpectedTabCount()));
                         issue.setSeverity(FileValidationIssue.Severity.WARNING);
 
-                        writer.write(fixedLine);
+                        writer.write(processedLine);
                         writer.newLine();
                     } else {
                         // Cannot auto-fix or insufficient tabs
@@ -110,16 +168,19 @@ public class FileValidationService {
                             hasCriticalIssues = true;
                         }
 
-                        writer.write(line);
+                        writer.write(processedLine);
                         writer.newLine();
                     }
 
-                    issues.add(issue);
+                    lineIssues.add(issue);
                 } else {
-                    // Line is valid
-                    writer.write(line);
+                    // Line tab count is valid, write the processed line
+                    writer.write(processedLine);
                     writer.newLine();
                 }
+
+                // Add all issues for this line
+                issues.addAll(lineIssues);
             }
 
             writer.flush();
@@ -208,7 +269,8 @@ public class FileValidationService {
         issue.setDescription(String.format(
                 "Line %d: Expected %d tabs but found %d tabs",
                 lineNumber, expectedTabs, actualTabs));
-        issue.setOriginalLine(truncate(originalLine, 500));
+        // Sanitize to remove NULL bytes before storing in PostgreSQL
+        issue.setOriginalLine(truncate(sanitizeForPostgres(originalLine), 500));
 
         return issue;
     }
@@ -220,6 +282,157 @@ public class FileValidationService {
         if (str == null)
             return null;
         return str.length() <= maxLength ? str : str.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * Clean line data according to PTDDataCleaner rules:
+     * 1. Replace control characters with asterisk (*)
+     * 2. Replace non-BASIC_LATIN characters with asterisk (*)
+     * 3. Collapse consecutive asterisks to single asterisk
+     * 
+     * @param line                 The line to clean
+     * @param replaceControlChars  Whether to replace control characters
+     * @param replaceNonLatinChars Whether to replace non-BASIC_LATIN characters
+     * @param collapseConsecutive  Whether to collapse consecutive asterisks
+     * @return DataCleaningResult containing cleaned line and statistics
+     */
+    private DataCleaningResult cleanLineData(
+            String line,
+            boolean replaceControlChars,
+            boolean replaceNonLatinChars,
+            boolean collapseConsecutive) {
+
+        DataCleaningResult result = new DataCleaningResult();
+        result.cleanedLine = line;
+
+        if (line == null || line.isEmpty()) {
+            return result;
+        }
+
+        String cleanedLine = line;
+
+        // Step 1: Replace control characters with regex (more efficient)
+        if (replaceControlChars) {
+            // Pattern for control characters (0x00-0x1F except tab/newline/CR, and 0x7F)
+            // Preserve \t (tab), \n (newline), \r (carriage return)
+            String beforeReplace = cleanedLine;
+            cleanedLine = CONTROL_CHAR_PATTERN.matcher(cleanedLine).replaceAll("*");
+
+            // Count replacements by comparing string lengths and asterisk counts
+            result.controlCharsReplaced = countReplacements(beforeReplace, cleanedLine);
+        }
+
+        // Step 2: Replace non-BASIC_LATIN characters with regex
+        if (replaceNonLatinChars) {
+            String beforeReplace = cleanedLine;
+            // Replace any character with codepoint > 0x7F (outside BASIC_LATIN)
+            // Preserve tabs and whitespace
+            cleanedLine = NON_BASIC_LATIN_PATTERN.matcher(cleanedLine).replaceAll("*");
+
+            result.nonLatinCharsReplaced = countReplacements(beforeReplace, cleanedLine);
+        }
+
+        result.cleanedLine = cleanedLine;
+        result.controlCharsReplaced = result.controlCharsReplaced;
+        result.nonLatinCharsReplaced = result.nonLatinCharsReplaced;
+
+        // Step 3: Collapse consecutive asterisks if enabled
+        if (collapseConsecutive && result.cleanedLine.contains("**")) {
+            String beforeCollapse = result.cleanedLine;
+            result.cleanedLine = result.cleanedLine.replaceAll("\\*{2,}", "*");
+            // Count how many asterisks were removed
+            int beforeCount = beforeCollapse.length() - beforeCollapse.replace("*", "").length();
+            int afterCount = result.cleanedLine.length() - result.cleanedLine.replace("*", "").length();
+            result.consecutiveCollapsed = beforeCount - afterCount;
+        }
+
+        return result;
+    }
+
+    /**
+     * Count how many characters were replaced by comparing before and after strings
+     * This counts the difference in length plus the number of asterisks added
+     */
+    private int countReplacements(String before, String after) {
+        if (before.equals(after)) {
+            return 0;
+        }
+
+        // Count asterisks in after that weren't in before
+        int beforeAsterisks = countChar(before, '*');
+        int afterAsterisks = countChar(after, '*');
+        int newAsterisks = afterAsterisks - beforeAsterisks;
+
+        // Calculate replacements: characters removed + new asterisks added
+        int lengthDiff = before.length() - after.length();
+        return lengthDiff + newAsterisks;
+    }
+
+    /**
+     * Count occurrences of a character in a string
+     */
+    private int countChar(String str, char c) {
+        int count = 0;
+        for (int i = 0; i < str.length(); i++) {
+            if (str.charAt(i) == c) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Sanitize string for PostgreSQL storage
+     * Removes NULL bytes (\x00) which PostgreSQL cannot store in text fields
+     */
+    private String sanitizeForPostgres(String input) {
+        if (input == null) {
+            return null;
+        }
+        // Remove NULL bytes - PostgreSQL cannot store \x00 in text fields
+        return input.replace("\u0000", "*");
+    }
+
+    /**
+     * Create a data cleaning issue record
+     */
+    private FileValidationIssue createDataCleaningIssue(
+            UUID batchId,
+            String fileName,
+            long lineNumber,
+            String originalLine,
+            String correctedLine,
+            FileValidationIssue.IssueType issueType,
+            int replacementCount,
+            String replacementDescription) {
+
+        FileValidationIssue issue = new FileValidationIssue();
+        issue.setBatchId(batchId);
+        issue.setFileName(fileName);
+        issue.setLineNumber(lineNumber);
+        issue.setIssueType(issueType);
+        issue.setSeverity(FileValidationIssue.Severity.WARNING);
+        issue.setAutoFixed(true);
+        // Sanitize strings to remove NULL bytes before storing in PostgreSQL
+        issue.setOriginalLine(truncate(sanitizeForPostgres(originalLine), 500));
+        issue.setCorrectedLine(truncate(sanitizeForPostgres(correctedLine), 500));
+        issue.setFixDescription(String.format("Replaced %d %s with asterisk (*)",
+                replacementCount, replacementDescription));
+        issue.setDescription(String.format(
+                "Line %d: Found %d %s, replaced with asterisk",
+                lineNumber, replacementCount, replacementDescription));
+
+        return issue;
+    }
+
+    /**
+     * Data cleaning result holder
+     */
+    private static class DataCleaningResult {
+        String cleanedLine;
+        int controlCharsReplaced = 0;
+        int nonLatinCharsReplaced = 0;
+        int consecutiveCollapsed = 0;
     }
 
     /**

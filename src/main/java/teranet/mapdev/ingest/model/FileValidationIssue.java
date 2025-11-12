@@ -1,12 +1,21 @@
 package teranet.mapdev.ingest.model;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
+
+import org.hibernate.annotations.CreationTimestamp;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Tracks validation issues found during file processing
@@ -33,6 +42,9 @@ public class FileValidationIssue {
         EXCESS_TABS, // More tabs than expected
         INSUFFICIENT_TABS, // Fewer tabs than expected
         INVALID_CHARACTERS, // Invalid characters in data
+        CONTROL_CHARACTERS, // Control characters found and replaced
+        NON_LATIN_CHARACTERS, // Non-BASIC_LATIN characters found and replaced
+        CONSECUTIVE_REPLACED_CHARS, // Consecutive replaced characters collapsed
         EMPTY_REQUIRED_FIELD, // Required field is empty
         DATA_TYPE_MISMATCH, // Data doesn't match expected type
         LENGTH_VIOLATION, // Field exceeds max length
