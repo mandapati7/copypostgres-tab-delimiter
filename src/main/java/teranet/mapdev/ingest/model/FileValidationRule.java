@@ -1,12 +1,18 @@
 package teranet.mapdev.ingest.model;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import java.time.LocalDateTime;
+
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import java.time.LocalDateTime;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Stores validation rules for different file types
@@ -48,6 +54,14 @@ public class FileValidationRule {
 
     @Column(name = "collapse_consecutive_replaced", nullable = false)
     private Boolean collapseConsecutiveReplaced = false; // Collapse consecutive replaced chars to single asterisk
+
+    // Data transformation configuration
+    @Column(name = "enable_data_transformation", nullable = false)
+    private Boolean enableDataTransformation = false; // Whether to apply custom data transformations
+
+    @Column(name = "transformer_class_name", length = 255)
+    private String transformerClassName; // Fully qualified class name (e.g.,
+                                         // "teranet.mapdev.ingest.transformer.IM2Transformer")
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;

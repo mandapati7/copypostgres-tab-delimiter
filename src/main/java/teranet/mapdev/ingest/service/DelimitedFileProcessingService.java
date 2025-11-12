@@ -10,6 +10,10 @@ import teranet.mapdev.ingest.config.CsvProcessingConfig;
 import teranet.mapdev.ingest.config.IngestConfig;
 import teranet.mapdev.ingest.model.IngestionManifest;
 import teranet.mapdev.ingest.model.FileValidationIssue;
+import teranet.mapdev.ingest.model.FileValidationRule;
+import teranet.mapdev.ingest.transformer.DataTransformer;
+import teranet.mapdev.ingest.stream.TransformingInputStream;
+import teranet.mapdev.ingest.repository.FileValidationRuleRepository;
 
 import javax.sql.DataSource;
 import java.io.BufferedReader;
@@ -52,6 +56,8 @@ public class DelimitedFileProcessingService {
     private final ColumnOrderResolverService columnOrderResolverService;
     private final FilenameRouterService filenameRouterService;
     private final FileValidationService fileValidationService;
+    private final DataTransformerFactory dataTransformerFactory;
+    private final FileValidationRuleRepository validationRuleRepository;
 
     public DelimitedFileProcessingService(
             DataSource dataSource,
@@ -61,7 +67,9 @@ public class DelimitedFileProcessingService {
             ColumnOrderResolverService columnOrderResolverService,
             FilenameRouterService filenameRouterService,
             CsvProcessingConfig csvProcessingConfig,
-            FileValidationService fileValidationService) {
+            FileValidationService fileValidationService,
+            DataTransformerFactory dataTransformerFactory,
+            FileValidationRuleRepository validationRuleRepository) {
         this.dataSource = dataSource;
         this.ingestConfig = ingestConfig;
         this.fileChecksumService = fileChecksumService;
@@ -70,6 +78,8 @@ public class DelimitedFileProcessingService {
         this.filenameRouterService = filenameRouterService;
         this.csvProcessingConfig = csvProcessingConfig;
         this.fileValidationService = fileValidationService;
+        this.dataTransformerFactory = dataTransformerFactory;
+        this.validationRuleRepository = validationRuleRepository;
     }
 
     /**
@@ -215,7 +225,31 @@ public class DelimitedFileProcessingService {
                 throw new RuntimeException("File validation error: " + ioEx.getMessage(), ioEx);
             }
 
-            // Step 6: Load data using PostgreSQL COPY (with validated file stream)
+            // Step 5.5: Apply data transformation if configured (AFTER validation, BEFORE COPY)
+            try {
+                java.util.Optional<FileValidationRule> ruleOpt = validationRuleRepository.findByFilePattern(filePattern);
+                if (ruleOpt.isPresent()) {
+                    FileValidationRule rule = ruleOpt.get();
+                    DataTransformer transformer = dataTransformerFactory.getTransformer(rule);
+                    
+                    // Apply transformation if needed
+                    if (transformer.requiresTransformation()) {
+                        log.info("Applying data transformation for file pattern: {} using transformer: {}", 
+                                filePattern, transformer.getClass().getSimpleName());
+                        fileStreamToLoad = new TransformingInputStream(fileStreamToLoad, transformer);
+                    } else {
+                        log.debug("No transformation required for file pattern: {}", filePattern);
+                    }
+                } else {
+                    log.debug("No validation rule found for pattern: {}, skipping transformation", filePattern);
+                }
+            } catch (Exception transEx) {
+                log.error("Error applying transformation for file: {}. Proceeding without transformation.", 
+                        file.getOriginalFilename(), transEx);
+                // Continue with unmodified stream if transformation fails
+            }
+
+            // Step 6: Load data using PostgreSQL COPY (with validated+transformed file stream)
             long rowCount = loadDataToCopy(fileStreamToLoad, targetTable, columnOrder, format, hasHeaders,
                     manifest.getBatchId());
 
