@@ -183,7 +183,6 @@ class FileValidationServiceDataCleaningTest {
         InputStream inputStream = new ByteArrayInputStream(inputData.getBytes(StandardCharsets.UTF_8));
 
         when(ruleRepository.findByFilePattern("pm3")).thenReturn(Optional.of(testRule));
-        when(issueRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When: validate and fix
         FileValidationService.ValidationResult result = validationService.validateAndFix(
@@ -191,6 +190,7 @@ class FileValidationServiceDataCleaningTest {
 
         // Then: no data cleaning issues should be created
         if (result.hasIssues()) {
+            when(issueRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
             verify(issueRepository).saveAll(issuesCaptor.capture());
             List<FileValidationIssue> issues = issuesCaptor.getValue();
 
@@ -244,7 +244,6 @@ class FileValidationServiceDataCleaningTest {
         InputStream inputStream = new ByteArrayInputStream(inputData.getBytes(StandardCharsets.UTF_8));
 
         when(ruleRepository.findByFilePattern("pm3")).thenReturn(Optional.of(testRule));
-        when(issueRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When: validate and fix
         FileValidationService.ValidationResult result = validationService.validateAndFix(
@@ -257,7 +256,7 @@ class FileValidationServiceDataCleaningTest {
 
         // Count tabs - should still have expected count
         long tabCount = output.chars().filter(ch -> ch == '\t').count();
-        assertThat(tabCount).isEqualTo(testRule.getExpectedTabCount());
+        assertThat(tabCount).isEqualTo((long) testRule.getExpectedTabCount());
     }
 
     @Test
