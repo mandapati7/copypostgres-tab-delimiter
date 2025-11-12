@@ -15,22 +15,22 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ZipAnalysisDto {
-    
+
     @JsonProperty("zip_filename")
     private String zipFilename;
-    
+
     @JsonProperty("total_files_extracted")
     private Integer totalFilesExtracted;
-    
+
     @JsonProperty("csv_files_found")
     private Integer csvFilesFound;
-    
+
     @JsonProperty("extraction_status")
     private String extractionStatus;
-    
+
     @JsonProperty("extracted_files")
     private List<ExtractedFileInfo> extractedFiles;
-    
+
     @JsonProperty("processing_recommendations")
     private List<String> processingRecommendations;
 
@@ -41,22 +41,25 @@ public class ZipAnalysisDto {
     public static class ExtractedFileInfo {
         @JsonProperty("filename")
         private String filename;
-        
+
+        @JsonProperty("relative_path")
+        private String relativePath;
+
         @JsonProperty("file_size")
         private Long fileSize;
-        
+
         @JsonProperty("file_type")
         private String fileType;
-        
+
         @JsonProperty("estimated_rows")
         private Long estimatedRows;
-        
+
         @JsonProperty("headers_detected")
         private List<String> headersDetected;
-        
+
         @JsonProperty("suggested_table_name")
         private String suggestedTableName;
-        
+
         @JsonProperty("staging_table_exists")
         private Boolean stagingTableExists;
     }

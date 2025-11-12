@@ -51,12 +51,6 @@ public class IngestConfig {
         private boolean inferFormatFromExtension = true;
     }
 
-    /**
-     * List of main tables for staging table creation, mapped from
-     * ingest.main-tables in application.properties
-     */
-    private java.util.List<String> mainTables;
-
     // ========================================
     // TSV SETTINGS (ingest.tsv.*)
     // ========================================
@@ -106,6 +100,31 @@ public class IngestConfig {
 
         /** Template to build table name. Example: ${g1}${g2} becomes PM1 */
         private String template = "${g1}${g2}";
+    }
+
+    // ========================================
+    // STAGING TABLES CONFIGURATION
+    // ========================================
+
+    /**
+     * List of main tables for staging table creation and validation.
+     * These tables are required for file processing.
+     * Example: im1,im2,im3,pm1,pm2,pm3,pm4,pm5,pm6,pm7
+     * (ingest.main-tables)
+     */
+    private String mainTables = "im1,im2,im3,pm1,pm2,pm3,pm4,pm5,pm6,pm7";
+
+    /**
+     * Get the list of main tables as an array.
+     * Splits the comma-separated string and trims whitespace.
+     * 
+     * @return Array of table names
+     */
+    public String[] getMainTablesArray() {
+        if (mainTables == null || mainTables.trim().isEmpty()) {
+            return new String[0];
+        }
+        return mainTables.split(",\\s*");
     }
 
     // ========================================

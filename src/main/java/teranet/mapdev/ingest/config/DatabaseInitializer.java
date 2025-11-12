@@ -12,7 +12,6 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.List;
 
 /**
  * Database initialization component that runs at application startup.
@@ -99,8 +98,12 @@ public class DatabaseInitializer {
                 logger.info(ANSI_GREEN + ANSI_BOLD + "[SUCCESS] Table structure validation: OK" + ANSI_RESET);
             }
 
-            // Step 6: Create staging tables for main tables
-            createStagingTablesFromMainTables();
+            // Step 6: Validate and ensure staging tables have required tracking columns
+            logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
+            logger.info(ANSI_CYAN + ANSI_BOLD + "STAGING TABLES VALIDATION" + ANSI_RESET);
+            logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
+
+            validateAndEnsureStagingTables();
 
             logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
             logger.info(ANSI_GREEN + ANSI_BOLD + "DATABASE INITIALIZATION - COMPLETED SUCCESSFULLY" + ANSI_RESET);
@@ -280,64 +283,162 @@ public class DatabaseInitializer {
         }
     }
 
-    /**
-     * Create staging tables for each main table listed in ingest.main-tables
-     * property.
-     * Staging tables are named with the prefix 'staging_'.
+    /*
+     * REMOVED: createStagingTablesFromMainTables()
      * 
-     * Adds three tracking columns to each staging table:
-     * - batch_id (UUID): Tracks which ingestion batch loaded the row
-     * - row_number (BIGSERIAL): Auto-incrementing row identifier
-     * - loaded_at (TIMESTAMP): When the row was loaded (defaults to current
-     * timestamp)
+     * This method is no longer needed because:
+     * 1. Tables are now created directly from filename routing (e.g., PM162 -> pm1)
+     * 2. No separate staging tables are required
+     * 3. ingest.main-tables property has been removed
+     * 4. csv.processing.staging-table-prefix property has been removed
+     * 
+     * The application now treats the target tables as the direct destination for
+     * data loading.
      */
-    private void createStagingTablesFromMainTables() {
 
-        List<String> mainTables = ingestConfig.getMainTables();
+    /**
+     * Validate and ensure all required staging tables exist with tracking columns.
+     * These tables are essential for file processing - without them, the
+     * application cannot function.
+     */
+    private void validateAndEnsureStagingTables() {
+        // Get list of required staging tables from configuration
+        String[] requiredTables = ingestConfig.getMainTablesArray();
+        String schema = "title_d_app";
+
+        boolean allTablesValid = true;
+        int tablesChecked = 0;
+        int tablesUpdated = 0;
+        int tablesMissing = 0;
 
         try (Connection connection = dataSource.getConnection()) {
-            for (String mainTable : mainTables) {
-                String trimmed = mainTable.trim();
-                if (trimmed.isEmpty())
+
+            for (String tableName : requiredTables) {
+                String fullTableName = schema + "." + tableName;
+                tablesChecked++;
+
+                logger.info(ANSI_BLUE + "   Checking table: {}" + ANSI_RESET, fullTableName);
+
+                // Check if table exists
+                if (!checkTableExistsInSchema(connection, schema, tableName)) {
+                    logger.error(ANSI_RED + ANSI_BOLD + "   [CRITICAL] Table '{}' does not exist!" + ANSI_RESET,
+                            fullTableName);
+                    logger.error(ANSI_RED + "   This table is REQUIRED for processing {} files" + ANSI_RESET,
+                            tableName.toUpperCase());
+                    tablesMissing++;
+                    allTablesValid = false;
                     continue;
-                StringBuilder stagingTable = new StringBuilder(csvProcessingConfig.getStagingTablePrefix()).append("_")
-                        .append(trimmed);
-                if (!checkTableExists(stagingTable.toString())) {
-                    logger.info(ANSI_YELLOW + "[INFO] Creating staging table: {} from {}" + ANSI_RESET, stagingTable,
-                            trimmed);
+                }
 
-                    // Create staging table with same structure as main table
-                    String ddl = String.format("CREATE TABLE IF NOT EXISTS %s (LIKE %s INCLUDING ALL)", stagingTable,
-                            trimmed);
-                    try (Statement stmt = connection.createStatement()) {
-                        stmt.execute(ddl);
-                        logger.info(ANSI_GREEN + "   Created staging table: {}" + ANSI_RESET, stagingTable);
+                // Check if table has required tracking columns
+                boolean hasTrackingColumns = checkTrackingColumns(connection, schema, tableName);
 
-                        // Add tracking columns
-                        addTrackingColumns(connection, stagingTable.toString());
+                if (!hasTrackingColumns) {
+                    logger.warn(
+                            ANSI_YELLOW + "   Table '{}' is missing tracking columns (batch_id, row_number, loaded_at)"
+                                    + ANSI_RESET,
+                            fullTableName);
+                    logger.info(ANSI_YELLOW + "   Attempting to add tracking columns..." + ANSI_RESET);
 
+                    try {
+                        addTrackingColumns(connection, fullTableName);
+                        logger.info(ANSI_GREEN + ANSI_BOLD + "   [SUCCESS] Added tracking columns to {}"
+                                + ANSI_RESET, fullTableName);
+                        tablesUpdated++;
                     } catch (Exception e) {
-                        logger.error(ANSI_RED + "   Failed to create staging table {}: {}" + ANSI_RESET, stagingTable,
-                                e.getMessage());
+                        logger.error(ANSI_RED + ANSI_BOLD + "   [CRITICAL] Failed to add tracking columns to {}"
+                                + ANSI_RESET, fullTableName);
+                        logger.error(ANSI_RED + "   Error: {}" + ANSI_RESET, e.getMessage());
+                        allTablesValid = false;
                     }
                 } else {
-                    logger.info(ANSI_GREEN + "[SUCCESS] Staging table exists: {}" + ANSI_RESET, stagingTable);
-                    // Ensure tracking columns exist on existing tables
-                    try {
-                        addTrackingColumns(connection, stagingTable.toString());
-                    } catch (Exception e) {
-                        logger.warn(ANSI_YELLOW + "   Could not add tracking columns to {}: {}" + ANSI_RESET,
-                                stagingTable, e.getMessage());
-                    }
+                    logger.info(ANSI_GREEN + "   Table '{}' has all required tracking columns" + ANSI_RESET,
+                            fullTableName);
                 }
             }
+
+            // Summary
+            logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
+            logger.info(ANSI_CYAN + "Staging Tables Summary:" + ANSI_RESET);
+            logger.info(ANSI_CYAN + "  - Tables checked: {}" + ANSI_RESET, tablesChecked);
+            logger.info(ANSI_CYAN + "  - Tables updated: {}" + ANSI_RESET, tablesUpdated);
+            if (tablesMissing > 0) {
+                logger.error(ANSI_RED + "  - Tables MISSING: {}" + ANSI_RESET, tablesMissing);
+            }
+            logger.info(ANSI_CYAN + "========================================" + ANSI_RESET);
+
+            if (!allTablesValid) {
+                logger.error(
+                        ANSI_RED + ANSI_BOLD + "[CRITICAL] Some staging tables are missing or invalid!" + ANSI_RESET);
+                logger.error(ANSI_RED + "Without these tables, the application CANNOT process files." + ANSI_RESET);
+                logger.error(ANSI_RED + "Please create the missing tables using the migration scripts:" + ANSI_RESET);
+                logger.error(ANSI_RED + "  - V2__Create_Title_D_App_Tables.sql" + ANSI_RESET);
+                logger.error(ANSI_RED + "  - V6__Add_Batch_Id_To_Staging_Tables.sql" + ANSI_RESET);
+                throw new RuntimeException("Required staging tables are missing - Application cannot start");
+            }
+
+            logger.info(ANSI_GREEN + ANSI_BOLD + "[SUCCESS] All staging tables validated: OK" + ANSI_RESET);
+
+        } catch (RuntimeException e) {
+            throw e; // Re-throw RuntimeException to stop application startup
         } catch (Exception e) {
-            logger.error(ANSI_RED + "Error creating staging tables: {}" + ANSI_RESET, e.getMessage());
+            logger.error(ANSI_RED + "Error validating staging tables: {}" + ANSI_RESET, e.getMessage(), e);
+            throw new RuntimeException("Staging table validation failed - Application cannot start", e);
         }
     }
 
     /**
-     * Add tracking columns to staging table if they don't exist.
+     * Check if a table exists in a specific schema.
+     */
+    private boolean checkTableExistsInSchema(Connection connection, String schema, String tableName) throws Exception {
+        String checkSQL = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = ? AND table_name = ?
+                )
+                """;
+
+        try (var preparedStatement = connection.prepareStatement(checkSQL)) {
+            preparedStatement.setString(1, schema.toLowerCase());
+            preparedStatement.setString(2, tableName.toLowerCase());
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getBoolean(1);
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a table has all required tracking columns (batch_id, row_number,
+     * loaded_at).
+     */
+    private boolean checkTrackingColumns(Connection connection, String schema, String tableName) throws Exception {
+        String checkSQL = """
+                SELECT
+                    COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = ?
+                AND table_name = ?
+                AND column_name IN ('batch_id', 'row_number', 'loaded_at')
+                """;
+
+        try (var preparedStatement = connection.prepareStatement(checkSQL)) {
+            preparedStatement.setString(1, schema.toLowerCase());
+            preparedStatement.setString(2, tableName.toLowerCase());
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    int columnCount = resultSet.getInt(1);
+                    return columnCount == 3; // All 3 tracking columns must exist
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Add tracking columns to table if they don't exist.
      * Uses IF NOT EXISTS to safely add columns to existing tables.
      */
     private void addTrackingColumns(Connection connection, String tableName) throws Exception {

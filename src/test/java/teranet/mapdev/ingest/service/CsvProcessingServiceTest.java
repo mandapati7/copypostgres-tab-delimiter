@@ -47,7 +47,7 @@ class CsvProcessingServiceTest {
     private CsvParsingService csvParsingService;
 
     @Mock
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
 
     @Mock
     private PostgresCopyService postgresCopyService;
@@ -118,8 +118,7 @@ class CsvProcessingServiceTest {
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
 
         // Mock table naming - use eq() for literal string and any() for UUID matcher
-        when(tableNamingService.generateTableNameFromFile(
-                eq(testCsvFile.getOriginalFilename()), any(UUID.class))).thenReturn(tableName);
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename()))).thenReturn(tableName);
 
         // Mock database connection for table creation
         when(dataSource.getConnection()).thenReturn(connection);
@@ -166,7 +165,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database operations
@@ -259,7 +258,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database connection failure
@@ -283,7 +282,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database setup
@@ -316,7 +315,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(emptyFile)).thenReturn("empty123");
         when(manifestService.findByChecksum("empty123")).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(emptyFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -356,7 +355,7 @@ class CsvProcessingServiceTest {
                 .thenThrow(new RuntimeException("Database unavailable"));
 
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -393,7 +392,7 @@ class CsvProcessingServiceTest {
                 .when(manifestService).save(any(IngestionManifest.class));
 
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -434,7 +433,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(largeFile)).thenReturn("large123");
         when(manifestService.findByChecksum("large123")).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(largeFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -473,8 +472,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(specialFile)).thenReturn("special123");
         when(manifestService.findByChecksum("special123")).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(specialFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(
-                eq("orders-2024_v2.csv"), any(UUID.class))).thenReturn(tableName);
+        when(filenameRouterService.resolveTableName(eq("orders-2024_v2.csv"))).thenReturn(tableName);
 
         // Mock database
         when(dataSource.getConnection()).thenReturn(connection);
@@ -507,7 +505,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -541,7 +539,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn(tableName);
 
         // Mock database
@@ -581,7 +579,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database for table creation
@@ -619,7 +617,7 @@ class CsvProcessingServiceTest {
         when(manifestService.findByChecksum(testChecksum))
                 .thenThrow(new RuntimeException("Database unavailable"));
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database
@@ -688,7 +686,7 @@ class CsvProcessingServiceTest {
         List<String> headers = Arrays.asList("col1", "col2");
         String tableName = "staging_test";
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database
@@ -723,7 +721,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database for table creation
@@ -758,7 +756,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database
@@ -789,7 +787,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database - table EXISTS
@@ -839,7 +837,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database
@@ -928,7 +926,7 @@ class CsvProcessingServiceTest {
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(manifestService.save(any(IngestionManifest.class))).thenReturn(preCreatedManifest);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Table creation fails
@@ -952,7 +950,7 @@ class CsvProcessingServiceTest {
         when(fileChecksumService.calculateFileChecksum(testCsvFile)).thenReturn(testChecksum);
         when(manifestService.findByChecksum(testChecksum)).thenReturn(null);
         when(csvParsingService.extractCsvHeaders(testCsvFile)).thenReturn(headers);
-        when(tableNamingService.generateTableNameFromFile(eq(testCsvFile.getOriginalFilename()), any(UUID.class)))
+        when(filenameRouterService.resolveTableName(eq(testCsvFile.getOriginalFilename())))
                 .thenReturn(tableName);
 
         // Mock database - table EXISTS
@@ -986,3 +984,5 @@ class CsvProcessingServiceTest {
         verify(statement, never()).execute(contains("ALTER TABLE"));
     }
 }
+
+

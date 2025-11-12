@@ -106,17 +106,16 @@ public class DelimitedFileProcessingService {
             String targetTable;
 
             if (routeByFilename) {
-                // Route to table based on filename (e.g., PM162 -> staging_pm1)
-                // FilenameRouterService already adds the staging prefix, so use it directly
+                // Route to table based on filename (e.g., PM162 -> pm1)
+                // FilenameRouterService resolves the table name directly from filename
                 targetTable = filenameRouterService.resolveTableName(file.getOriginalFilename());
 
                 log.info("Routing {} to {}", file.getOriginalFilename(), targetTable);
             } else {
-                // Use default schema and staging table pattern
-                targetTable = csvProcessingConfig.getStagingTablePrefix() + "_"
-                        + sanitizeTableName(file.getOriginalFilename());
+                // Use default schema and table name from filename
+                targetTable = sanitizeTableName(file.getOriginalFilename());
 
-                log.info("Using staging table: {}", targetTable);
+                log.info("Using table: {}", targetTable);
             }
 
             // Step 3: Get column order from database schema

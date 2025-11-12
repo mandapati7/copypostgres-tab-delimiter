@@ -32,9 +32,11 @@ class BatchProcessingServiceTest {
     @Mock
     private CsvProcessingService csvProcessingService;
     @Mock
+    private DelimitedFileProcessingService delimitedFileProcessingService;
+    @Mock
     private IngestionManifestService manifestService;
     @Mock
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
 
     @InjectMocks
     private BatchProcessingService batchProcessingService;
@@ -65,15 +67,15 @@ class BatchProcessingServiceTest {
         when(manifestService.findByChecksum(anyString())).thenReturn(null);
         when(manifestService.save(any())).thenReturn(zipManifest);
         when(zipProcessingService.analyzeZipFile(any())).thenReturn(createAnalysis(List.of("f1.csv")));
-        when(csvProcessingService.processCsvToStaging(any(), any())).thenReturn(csv1);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any())).thenReturn("staging_f1_abc");
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean())).thenReturn(csv1);
+        when(filenameRouterService.resolveTableName(anyString())).thenReturn("staging_f1_abc");
 
         MockMultipartFile zip = createZip("test.zip", Map.of("f1.csv", "id,name\n1,A"));
         BatchProcessingResultDto result = batchProcessingService.processBatchFromZip(zip);
 
         assertThat(result.getProcessingStatus()).isEqualTo("SUCCESS");
         assertThat(result.getTotalFilesProcessed()).isEqualTo(1);
-        verify(csvProcessingService).processCsvToStaging(any(), any());
+        verify(delimitedFileProcessingService).processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean());
     }
 
     @Test
@@ -85,7 +87,7 @@ class BatchProcessingServiceTest {
         BatchProcessingResultDto result = batchProcessingService.processBatchFromZip(zip);
 
         assertThat(result.getProcessingStatus()).isEqualTo("ALREADY_PROCESSED");
-        verify(csvProcessingService, never()).processCsvToStaging(any(), any());
+        verify(delimitedFileProcessingService, never()).processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean());
     }
 
     @Test
@@ -93,8 +95,8 @@ class BatchProcessingServiceTest {
         IngestionManifest m1 = createManifest(UUID.randomUUID(), "f1.csv");
         m1.setTotalRecords(1L);
 
-        when(csvProcessingService.processCsvToStaging(any(), isNull())).thenReturn(m1);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any())).thenReturn("staging_f1");
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean())).thenReturn(m1);
+        when(filenameRouterService.resolveTableName(anyString())).thenReturn("staging_f1");
 
         List<MultipartFile> files = List.of(
                 new MockMultipartFile("f", "f1.csv", "text/csv", "id\n1".getBytes()));
@@ -138,9 +140,9 @@ class BatchProcessingServiceTest {
         when(manifestService.save(any())).thenReturn(zipManifest);
         when(zipProcessingService.analyzeZipFile(any()))
                 .thenReturn(createAnalysis(List.of("f1.csv", "f2.csv")));
-        when(csvProcessingService.processCsvToStaging(any(), any()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(csv1, csv2);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_f1_abc", "staging_f2_abc");
 
         MockMultipartFile zip = createZip("multi.zip", Map.of(
@@ -167,10 +169,10 @@ class BatchProcessingServiceTest {
         when(manifestService.save(any())).thenReturn(zipManifest);
         when(zipProcessingService.analyzeZipFile(any()))
                 .thenReturn(createAnalysis(List.of("good.csv", "bad.csv")));
-        when(csvProcessingService.processCsvToStaging(any(), any()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(csv1)
                 .thenThrow(new RuntimeException("Parse error"));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_good", "staging_bad");
 
         MockMultipartFile zip = createZip("partial.zip", Map.of(
@@ -189,10 +191,10 @@ class BatchProcessingServiceTest {
         IngestionManifest m1 = createManifest(UUID.randomUUID(), "good.csv");
         m1.setTotalRecords(5L);
 
-        when(csvProcessingService.processCsvToStaging(any(), isNull()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(m1)
                 .thenThrow(new RuntimeException("Processing failed"));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_good", "staging_bad");
 
         List<MultipartFile> files = List.of(
@@ -209,9 +211,9 @@ class BatchProcessingServiceTest {
 
     @Test
     void testProcessBatchFromFiles_AllFailed() throws Exception {
-        when(csvProcessingService.processCsvToStaging(any(), isNull()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenThrow(new RuntimeException("Processing failed"));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_fail");
 
         List<MultipartFile> files = List.of(
@@ -248,9 +250,9 @@ class BatchProcessingServiceTest {
         when(manifestService.save(any())).thenReturn(zipManifest);
         when(zipProcessingService.analyzeZipFile(any()))
                 .thenReturn(createAnalysis(List.of("empty.csv")));
-        when(csvProcessingService.processCsvToStaging(any(), any()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(emptyCsv);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_empty");
 
         MockMultipartFile zip = createZip("empty.zip", Map.of("empty.csv", "id\n"));
@@ -268,9 +270,9 @@ class BatchProcessingServiceTest {
         duplicate.setAlreadyProcessed(true);
         duplicate.setCompletedAt(LocalDateTime.now());
 
-        when(csvProcessingService.processCsvToStaging(any(), isNull()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(duplicate);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_dup");
 
         List<MultipartFile> files = List.of(
@@ -299,9 +301,9 @@ class BatchProcessingServiceTest {
         when(manifestService.save(any())).thenReturn(zipManifest);
         when(zipProcessingService.analyzeZipFile(any()))
                 .thenReturn(createAnalysis(List.of("dup1.csv", "dup2.csv")));
-        when(csvProcessingService.processCsvToStaging(any(), any()))
+        when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(dup1, dup2);
-        when(tableNamingService.generateTableNameFromFile(anyString(), any()))
+        when(filenameRouterService.resolveTableName(anyString()))
                 .thenReturn("staging_dup1", "staging_dup2");
 
         MockMultipartFile zip = createZip("alldup.zip", Map.of(
@@ -334,6 +336,7 @@ class BatchProcessingServiceTest {
         for (String n : names) {
             ExtractedFileInfo f = new ExtractedFileInfo();
             f.setFilename(n);
+            f.setRelativePath(n); // Use same as filename for test simplicity
             f.setFileType("CSV");
             f.setFileSize(100L);
             files.add(f);
@@ -346,7 +349,8 @@ class BatchProcessingServiceTest {
         IngestionManifest m = new IngestionManifest();
         m.setBatchId(id);
         m.setFileName(name);
-        m.setStatus(IngestionManifest.Status.PROCESSING);
+        m.setStatus(IngestionManifest.Status.COMPLETED);  // CSV processing returns COMPLETED manifests
+        m.setTableName("staging_" + name.replace(".csv", ""));  // Set table name that CSV service would return
         m.setFileSizeBytes(100L);
         m.setFileChecksum("abc");
         m.setAlreadyProcessed(false);

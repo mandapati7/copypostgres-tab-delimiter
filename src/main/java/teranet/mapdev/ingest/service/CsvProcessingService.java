@@ -45,7 +45,7 @@ public class CsvProcessingService {
     private CsvParsingService csvParsingService;
     
     @Autowired
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
     
     @Autowired
     private PostgresCopyService postgresCopyService;
@@ -170,9 +170,9 @@ public class CsvProcessingService {
                 logger.warn("Could not save manifest, continuing with fallback: {}", e.getMessage());
             }
             
-            // Extract headers and generate table name with batch_id suffix
+            // Extract headers and resolve table name using filename routing
             List<String> headers = csvParsingService.extractCsvHeaders(file);
-            String tableName = tableNamingService.generateTableNameFromFile(file.getOriginalFilename(), manifest.getBatchId());
+            String tableName = filenameRouterService.resolveTableName(file.getOriginalFilename());
             
             logger.info("Processing to table: {} with columns: {}", tableName, headers);
             

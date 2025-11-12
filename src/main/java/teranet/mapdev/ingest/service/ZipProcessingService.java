@@ -32,7 +32,7 @@ public class ZipProcessingService {
     private CsvProcessingService csvProcessingService;
     
     @Autowired
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
     
     private static final String TEMP_EXTRACTION_DIR = "temp_extracted";
     private static final long MAX_ESTIMATION_BYTES = 1024 * 1024; // 1MB for row estimation
@@ -192,10 +192,12 @@ public class ZipProcessingService {
      */
     private ExtractedFileInfo analyzeCsvFile(Path csvPath, Path extractionPath) {
         try {
-            // Get relative path from extraction directory (preserves folder structure)
+            // Get relative path from extraction directory (preserves folder structure for file location)
             String relativePath = extractionPath.relativize(csvPath).toString();
             // Normalize path separators to forward slashes for consistency
-            String filename = relativePath.replace('\\', '/');
+            relativePath = relativePath.replace('\\', '/');
+            // Extract just the filename (not the parent folder) for routing
+            String filename = csvPath.getFileName().toString();
             long fileSize = Files.size(csvPath);
             
             // Extract headers from CSV file
@@ -204,15 +206,15 @@ public class ZipProcessingService {
             // Estimate row count
             long estimatedRows = estimateRowCount(csvPath, fileSize);
             
-            // Generate table name from filename (use temporary UUID for analysis preview)
-            UUID tempBatchId = UUID.randomUUID();
-            String suggestedTableName = tableNamingService.generateTableNameFromFile(filename, tempBatchId);
+            // Resolve table name from filename using routing rules
+            String suggestedTableName = filenameRouterService.resolveTableName(filename);
             
             // Check if table exists in default schema
             boolean tableExists = databaseConnectionService.doesStagingTableExist(suggestedTableName);
             
             ExtractedFileInfo fileInfo = new ExtractedFileInfo(
                 filename,
+                relativePath,
                 fileSize,
                 "CSV",
                 estimatedRows,

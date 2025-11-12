@@ -32,7 +32,7 @@ class ZipProcessingServiceTest {
     private CsvProcessingService csvProcessingService;
 
     @Mock
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
 
     @Mock
     private MultipartFile zipFile;
@@ -63,9 +63,9 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_data");
+
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_data");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -138,8 +138,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_users", "staging_products");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_users", "staging_products");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -157,7 +157,7 @@ class ZipProcessingServiceTest {
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             ZipEntry entry = new ZipEntry("large_data.csv");
             zos.putNextEntry(entry);
-            
+
             // Create CSV with header
             StringBuilder csvContent = new StringBuilder("id,name,value\n");
             // Simulate large file by adding many rows
@@ -170,8 +170,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_large_data");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_large_data");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -193,8 +193,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_existing");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_existing");
         when(databaseConnectionService.doesStagingTableExist("staging_existing")).thenReturn(true);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -202,7 +202,7 @@ class ZipProcessingServiceTest {
         assertNotNull(result);
         assertTrue(result.getExtractedFiles().get(0).getStagingTableExists());
         assertTrue(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.contains("existing tables will be updated")));
+                .anyMatch(r -> r.contains("existing tables will be updated")));
     }
 
     @Test
@@ -217,8 +217,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_empty");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_empty");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -246,8 +246,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_nested");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_nested");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -274,10 +274,10 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(eq("new.csv"), any(UUID.class)))
-            .thenReturn("staging_new");
-        when(tableNamingService.generateTableNameFromFile(eq("existing.csv"), any(UUID.class)))
-            .thenReturn("staging_existing");
+        when(filenameRouterService.resolveTableName(eq("new.csv")))
+                .thenReturn("staging_new");
+        when(filenameRouterService.resolveTableName(eq("existing.csv")))
+                .thenReturn("staging_existing");
         when(databaseConnectionService.doesStagingTableExist("staging_new")).thenReturn(false);
         when(databaseConnectionService.doesStagingTableExist("staging_existing")).thenReturn(true);
 
@@ -286,9 +286,9 @@ class ZipProcessingServiceTest {
         assertNotNull(result);
         assertEquals(2, result.getCsvFilesFound());
         assertTrue(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.contains("1 new tables will be created")));
+                .anyMatch(r -> r.contains("1 new tables will be created")));
         assertTrue(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.contains("1 existing tables will be updated")));
+                .anyMatch(r -> r.contains("1 existing tables will be updated")));
     }
 
     @Test
@@ -304,8 +304,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_complex");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_complex");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -322,15 +322,16 @@ class ZipProcessingServiceTest {
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             ZipEntry entry = new ZipEntry("massive.csv");
             zos.putNextEntry(entry);
-            
+
             // Write header
             zos.write("id,name,description,value,category,notes,timestamp\n".getBytes());
-            
+
             // Write enough rows to exceed 1MB (MAX_ESTIMATION_BYTES)
             // Each row ~100 bytes, need >10,000 rows to exceed 1MB
             for (int i = 0; i < 15000; i++) {
-                String row = String.format("%d,Name%d,Long description text for item %d,Value%d,Category%d,Notes here %d,%d\n",
-                                         i, i, i, i, i % 10, i, System.currentTimeMillis());
+                String row = String.format(
+                        "%d,Name%d,Long description text for item %d,Value%d,Category%d,Notes here %d,%d\n",
+                        i, i, i, i, i % 10, i, System.currentTimeMillis());
                 zos.write(row.getBytes());
             }
             zos.closeEntry();
@@ -338,8 +339,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_massive");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_massive");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -363,8 +364,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_header_only");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_header_only");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -384,9 +385,9 @@ class ZipProcessingServiceTest {
             for (int fileNum = 1; fileNum <= 3; fileNum++) {
                 ZipEntry entry = new ZipEntry("large_" + fileNum + ".csv");
                 zos.putNextEntry(entry);
-                
+
                 zos.write("id,data,value\n".getBytes());
-                
+
                 // Write 400k rows per file
                 for (int i = 0; i < 400000; i++) {
                     zos.write(String.format("%d,Data%d,%d\n", i, i, i * 10).getBytes());
@@ -397,8 +398,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_large_1", "staging_large_2", "staging_large_3");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_large_1", "staging_large_2", "staging_large_3");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
@@ -407,13 +408,14 @@ class ZipProcessingServiceTest {
         assertEquals(3, result.getCsvFilesFound());
         // Should recommend batch processing for large dataset (>1M rows)
         assertTrue(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.toLowerCase().contains("batch")),
-            "Should recommend batch processing for >1M total rows");
+                .anyMatch(r -> r.toLowerCase().contains("batch")),
+                "Should recommend batch processing for >1M total rows");
     }
 
     @Test
     void testAnalyzeZipFile_AllTablesExist() throws IOException {
-        // Test when all tables already exist - covers branch in generateProcessingRecommendations
+        // Test when all tables already exist - covers branch in
+        // generateProcessingRecommendations
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             ZipEntry entry1 = new ZipEntry("existing1.csv");
@@ -429,8 +431,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_existing1", "staging_existing2");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_existing1", "staging_existing2");
         // All tables exist
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(true);
 
@@ -440,9 +442,9 @@ class ZipProcessingServiceTest {
         assertEquals(2, result.getCsvFilesFound());
         // Should mention existing tables update, but NOT new table creation
         assertTrue(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.contains("existing tables")));
+                .anyMatch(r -> r.contains("existing tables")));
         assertFalse(result.getProcessingRecommendations().stream()
-            .anyMatch(r -> r.contains("new tables will be created")));
+                .anyMatch(r -> r.contains("new tables will be created")));
     }
 
     @Test
@@ -468,15 +470,15 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_lowercase", "staging_uppercase", "staging_mixedcase");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_lowercase", "staging_uppercase", "staging_mixedcase");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         ZipAnalysisDto result = service.analyzeZipFile(zipFile);
 
         assertNotNull(result);
-        assertEquals(3, result.getCsvFilesFound(), 
-                    "Should detect CSV files regardless of case");
+        assertEquals(3, result.getCsvFilesFound(),
+                "Should detect CSV files regardless of case");
     }
 
     @Test
@@ -495,8 +497,8 @@ class ZipProcessingServiceTest {
 
         byte[] zipBytes = baos.toByteArray();
         when(zipFile.getInputStream()).thenReturn(new ByteArrayInputStream(zipBytes));
-        when(tableNamingService.generateTableNameFromFile(anyString(), any(UUID.class)))
-            .thenReturn("staging_unusual");
+        when(filenameRouterService.resolveTableName(anyString()))
+                .thenReturn("staging_unusual");
         when(databaseConnectionService.doesStagingTableExist(anyString())).thenReturn(false);
 
         // Should handle gracefully without throwing exception

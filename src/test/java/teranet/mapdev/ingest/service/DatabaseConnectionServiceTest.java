@@ -58,7 +58,7 @@ class DatabaseConnectionServiceTest {
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getMetaData()).thenReturn(metaData);
         when(connection.isValid(5)).thenReturn(true);
-        
+
         // Mock schemas
         when(metaData.getSchemas()).thenReturn(resultSet);
         when(resultSet.next()).thenReturn(true, true, false);
@@ -78,7 +78,7 @@ class DatabaseConnectionServiceTest {
     @Test
     void testGetConnectionInfo_WithHikariDataSource() throws SQLException {
         ReflectionTestUtils.setField(service, "dataSource", hikariDataSource);
-        
+
         when(hikariDataSource.getConnection()).thenReturn(connection);
         when(hikariDataSource.getMaximumPoolSize()).thenReturn(10);
         when(connection.getMetaData()).thenReturn(metaData);
@@ -153,28 +153,26 @@ class DatabaseConnectionServiceTest {
 
     @Test
     void testGetStagingTables_Success() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getMetaData()).thenReturn(metaData);
-        when(metaData.getTables(isNull(), isNull(), eq("staging_%"), any())).thenReturn(resultSet);
+        when(metaData.getTables(isNull(), isNull(), eq("%"), any())).thenReturn(resultSet);
         when(resultSet.next()).thenReturn(true, true, false);
-        when(resultSet.getString("TABLE_NAME")).thenReturn("staging_table1", "staging_table2");
+        when(resultSet.getString("TABLE_NAME")).thenReturn("table1", "table2");
 
         List<String> result = service.getStagingTables();
 
         assertNotNull(result);
         assertEquals(2, result.size());
-        assertTrue(result.contains("staging_table1"));
-        assertTrue(result.contains("staging_table2"));
+        assertTrue(result.contains("table1"));
+        assertTrue(result.contains("table2"));
         verify(connection).close();
     }
 
     @Test
     void testGetStagingTables_EmptyList() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getMetaData()).thenReturn(metaData);
-        when(metaData.getTables(isNull(), isNull(), eq("staging_%"), any())).thenReturn(resultSet);
+        when(metaData.getTables(isNull(), isNull(), eq("%"), any())).thenReturn(resultSet);
         when(resultSet.next()).thenReturn(false);
 
         List<String> result = service.getStagingTables();
@@ -186,7 +184,6 @@ class DatabaseConnectionServiceTest {
 
     @Test
     void testGetStagingTables_Exception() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
         when(dataSource.getConnection()).thenThrow(new SQLException("DB error"));
 
         List<String> result = service.getStagingTables();
@@ -196,87 +193,13 @@ class DatabaseConnectionServiceTest {
     }
 
     @Test
-    void testDropAllStagingTables_Success() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.getMetaData()).thenReturn(metaData);
-        when(metaData.getTables(isNull(), isNull(), eq("staging_%"), any())).thenReturn(resultSet);
-        when(resultSet.next()).thenReturn(true, true, false);
-        when(resultSet.getString("TABLE_NAME")).thenReturn("staging_table1", "staging_table2");
-        when(connection.createStatement()).thenReturn(statement);
-        when(statement.execute(anyString())).thenReturn(true);
-
-        Map<String, Object> result = service.dropAllStagingTables();
-
-        assertNotNull(result);
-        assertEquals("SUCCESS", result.get("status"));
-        assertEquals(2, result.get("tables_dropped"));
-        @SuppressWarnings("unchecked")
-        List<String> droppedTables = (List<String>) result.get("dropped_tables");
-        assertEquals(2, droppedTables.size());
-        verify(statement, times(2)).execute(contains("DROP TABLE"));
-        verify(connection, times(2)).close(); // Called twice: once in getStagingTables, once in dropAllStagingTables
-    }
-
-    @Test
-    void testDropAllStagingTables_NoTables() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.getMetaData()).thenReturn(metaData);
-        when(metaData.getTables(isNull(), isNull(), eq("staging_%"), any())).thenReturn(resultSet);
-        when(resultSet.next()).thenReturn(false);
-
-        Map<String, Object> result = service.dropAllStagingTables();
-
-        assertNotNull(result);
-        assertEquals("SUCCESS", result.get("status"));
-        assertEquals(0, result.get("tables_dropped"));
-        assertTrue(result.get("message").toString().contains("No staging tables found"));
-        verify(connection, times(2)).close(); // Called twice: once in getStagingTables, once in dropAllStagingTables
-    }
-
-    @Test
-    void testDropAllStagingTables_PartialFailure() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.getMetaData()).thenReturn(metaData);
-        when(metaData.getTables(isNull(), isNull(), eq("staging_%"), any())).thenReturn(resultSet);
-        when(resultSet.next()).thenReturn(true, true, false);
-        when(resultSet.getString("TABLE_NAME")).thenReturn("staging_table1", "staging_table2");
-        when(connection.createStatement()).thenReturn(statement);
-        when(statement.execute(anyString()))
-            .thenReturn(true)
-            .thenThrow(new SQLException("Drop failed"));
-
-        Map<String, Object> result = service.dropAllStagingTables();
-
-        assertNotNull(result);
-        assertEquals("SUCCESS", result.get("status"));
-        assertEquals(1, result.get("tables_dropped"));
-        verify(statement, times(2)).execute(contains("DROP TABLE"));
-        verify(connection, times(2)).close(); // Called twice: once in getStagingTables, once in dropAllStagingTables
-    }
-
-    @Test
-    void testDropAllStagingTables_Exception() throws SQLException {
-        when(csvConfig.getStagingTablePrefix()).thenReturn("staging");
-        when(dataSource.getConnection()).thenThrow(new SQLException("Connection error"));
-
-        Map<String, Object> result = service.dropAllStagingTables();
-
-        assertNotNull(result);
-        assertEquals("ERROR", result.get("status"));
-        assertEquals(0, result.get("tables_dropped"));
-        assertTrue(result.get("message").toString().contains("Error:"));
-    }
-
-    @Test
     void testExtractDatabaseName_ValidUrl() {
         ReflectionTestUtils.setField(service, "databaseUrl", "jdbc:postgresql://localhost:5432/mydb?ssl=true");
-        
+
         DatabaseConnectionInfoDto result = service.getConnectionInfo();
-        
-        // The connection will fail in test, but we can verify URL parsing in a different way
+
+        // The connection will fail in test, but we can verify URL parsing in a
+        // different way
         // Let's test by checking the error message contains our URL
         assertTrue(result.getDatabaseUrl().contains("mydb"));
     }

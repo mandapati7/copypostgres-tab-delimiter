@@ -43,7 +43,7 @@ public class BatchProcessingService {
     private IngestionManifestService manifestService;
     
     @Autowired
-    private TableNamingService tableNamingService;
+    private FilenameRouterService filenameRouterService;
     
     private static final String TEMP_BATCH_DIR = "temp_batch_processing";
 
@@ -277,9 +277,11 @@ public class BatchProcessingService {
             }
             
             try {
-                Path csvPath = batchDir.resolve(fileInfo.getFilename());
+                // Use relativePath to locate the file (includes subdirectory structure like 62.2023_05_24.08_46_06/IM162)
+                Path csvPath = batchDir.resolve(fileInfo.getRelativePath());
                 if (!Files.exists(csvPath)) {
-                    logger.warn("CSV file not found in batch directory: {}", fileInfo.getFilename());
+                    logger.warn("CSV file not found in batch directory: {} (relative path: {})", 
+                               fileInfo.getFilename(), fileInfo.getRelativePath());
                     results.add(createFailedFileResult(fileInfo.getFilename(), "File not found in extracted directory"));
                     continue;
                 }
@@ -366,9 +368,8 @@ public class BatchProcessingService {
             long processingTime = System.currentTimeMillis() - startTime;
             logger.error("Failed to process CSV file: {}", filename, e);
             
-            // For failed processing, generate table name estimate (won't actually be created)
-            UUID tempBatchId = UUID.randomUUID();
-            String estimatedTableName = tableNamingService.generateTableNameFromFile(filename, tempBatchId);
+            // For failed processing, resolve table name estimate (won't actually be created)
+            String estimatedTableName = filenameRouterService.resolveTableName(filename);
             
             return new FileProcessingResult(
                 filename,
