@@ -30,8 +30,6 @@ class BatchProcessingServiceTest {
     @Mock
     private ZipProcessingService zipProcessingService;
     @Mock
-    private CsvProcessingService csvProcessingService;
-    @Mock
     private DelimitedFileProcessingService delimitedFileProcessingService;
     @Mock
     private IngestionManifestService manifestService;

@@ -1,5 +1,6 @@
 package teranet.mapdev.ingest.service;
 
+import teranet.mapdev.ingest.config.IngestConfig;
 import teranet.mapdev.ingest.config.WatchFolderConfig;
 import teranet.mapdev.ingest.model.IngestionManifest;
 import teranet.mapdev.ingest.dto.BatchProcessingResultDto;
@@ -37,13 +38,16 @@ public class WatchFolderService {
     private WatchFolderManager folderManager;
 
     @Autowired
-    private CsvProcessingService csvProcessingService;
+    private DelimitedFileProcessingService delimitedFileProcessingService;
 
     @Autowired
     private BatchProcessingService batchProcessingService;
 
     @Autowired
     private IngestionManifestService manifestService;
+
+    @Autowired
+    private IngestConfig ingestConfig;
 
     private WatchService watchService;
     private ExecutorService executorService;
@@ -216,14 +220,14 @@ public class WatchFolderService {
             }
 
             // Check if data file has an extension
-            if (!dataFileName.contains(".")) {
+            /*if (!dataFileName.contains(".")) {
                 logger.error("[ERROR] Data file name has no extension: {}. Expected: {}.csv or {}.zip",
                         dataFileName, dataFileName, dataFileName);
                 logger.error("   Marker file should be: {}.csv{} or {}.zip{}",
                         dataFileName, config.getMarkerExtension(), dataFileName, config.getMarkerExtension());
                 // Don't delete marker - let user see the mistake
                 return;
-            }
+            }*/
 
             // Check if data file exists
             Path dataFilePath = folderManager.getUploadPath().resolve(dataFileName);
@@ -305,8 +309,8 @@ public class WatchFolderService {
             String extension = getFileExtension(fileName);
             IngestionManifest manifest;
 
-            if (".csv".equalsIgnoreCase(extension)) {
-                manifest = processCsvFile(wipFilePath);
+            if (extension.isEmpty()) {
+                manifest = processTsvDelimeterFile(wipFilePath);
             } else if (".zip".equalsIgnoreCase(extension)) {
                 manifest = processZipFile(wipFilePath);
             } else {
@@ -367,7 +371,7 @@ public class WatchFolderService {
     /**
      * Process a CSV file
      */
-    private IngestionManifest processCsvFile(Path csvFilePath) {
+    private IngestionManifest processTsvDelimeterFile(Path csvFilePath) {
         logger.info("Processing CSV file: {}", csvFilePath.getFileName());
         logger.debug("[DEBUG] About to convert Path to MultipartFile");
 
@@ -375,10 +379,15 @@ public class WatchFolderService {
             // Convert Path to MultipartFile
             MultipartFile multipartFile = convertToMultipartFile(csvFilePath);
 
-            logger.debug("[DEBUG] MultipartFile created, about to call CsvProcessingService");
+            logger.debug("[DEBUG] MultipartFile created, about to call Delimited File Processing Service");
+
+            String effectiveFormat = ingestConfig.getApi().getDefaultFormat();
+
+            boolean hasHeadersForFormat = ingestConfig.hasHeadersForFormat(effectiveFormat);
+
+            IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(multipartFile, effectiveFormat, hasHeadersForFormat, true);
 
             // Use existing CSV processing service
-            IngestionManifest manifest = csvProcessingService.processCsvToStaging(multipartFile);
 
             logger.info("CSV processing completed - Status: {}", manifest.getStatus());
 

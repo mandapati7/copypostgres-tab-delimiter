@@ -32,10 +32,7 @@ public class BatchProcessingService {
     
     @Autowired
     private ZipProcessingService zipProcessingService;
-    
-    @Autowired
-    private CsvProcessingService csvProcessingService;
-    
+
     @Autowired
     private DelimitedFileProcessingService delimitedFileProcessingService;
     

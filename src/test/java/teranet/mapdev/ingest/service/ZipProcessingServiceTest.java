@@ -29,9 +29,6 @@ class ZipProcessingServiceTest {
     private DatabaseConnectionService databaseConnectionService;
 
     @Mock
-    private CsvProcessingService csvProcessingService;
-
-    @Mock
     private FilenameRouterService filenameRouterService;
 
     @Mock

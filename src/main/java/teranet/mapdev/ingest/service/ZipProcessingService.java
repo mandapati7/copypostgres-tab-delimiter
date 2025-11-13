@@ -27,10 +27,7 @@ public class ZipProcessingService {
     
     @Autowired
     private DatabaseConnectionService databaseConnectionService;
-    
-    @Autowired
-    private CsvProcessingService csvProcessingService;
-    
+
     @Autowired
     private FilenameRouterService filenameRouterService;
     

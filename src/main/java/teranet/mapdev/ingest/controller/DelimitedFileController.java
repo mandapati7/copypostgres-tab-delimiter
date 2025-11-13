@@ -5,20 +5,27 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
 import teranet.mapdev.ingest.config.IngestConfig;
 import teranet.mapdev.ingest.dto.CsvUploadResponseDto;
 import teranet.mapdev.ingest.dto.ErrorResponseDto;
+import teranet.mapdev.ingest.dto.IngestionStatusDto;
 import teranet.mapdev.ingest.model.IngestionManifest;
 import teranet.mapdev.ingest.service.DelimitedFileProcessingService;
 import teranet.mapdev.ingest.service.FilenameRouterService;
 import teranet.mapdev.ingest.util.FileValidationUtil;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import teranet.mapdev.ingest.service.IngestionManifestService;
 
 /**
  * Controller for delimited file operations (CSV/TSV)
@@ -37,10 +44,13 @@ import org.slf4j.LoggerFactory;
 public class DelimitedFileController {
 
     private static final Logger log = LoggerFactory.getLogger(DelimitedFileController.class);
-    
+
     private final IngestConfig ingestConfig;
     private final FilenameRouterService filenameRouterService;
     private final DelimitedFileProcessingService delimitedFileProcessingService;
+
+    @Autowired
+    private IngestionManifestService manifestService;
 
     public DelimitedFileController(
             IngestConfig ingestConfig,
@@ -163,6 +173,38 @@ public class DelimitedFileController {
             log.error("Failed to process delimited file: {}", file.getOriginalFilename(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new ErrorResponseDto("Processing Error", "Failed to process file: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Get processing status by batch ID
+     */
+    @GetMapping("/status/{batchId}")
+    @Operation(summary = "Get CSV processing status", description = "Retrieve the processing status for a specific batch ID")
+    @ApiResponse(responseCode = "200", description = "Status retrieved successfully")
+    @ApiResponse(responseCode = "404", description = "Batch ID not found")
+    public ResponseEntity<IngestionStatusDto> getProcessingStatus(@PathVariable String batchId) {
+
+        log.info("Retrieving processing status for batch: {}", batchId);
+
+        try {
+            IngestionManifest manifest = manifestService.findByBatchId(java.util.UUID.fromString(batchId));
+
+            if (manifest == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            IngestionStatusDto status = new IngestionStatusDto(manifest);
+
+            return ResponseEntity.ok(status);
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid batch ID format: {}", batchId);
+            return ResponseEntity.badRequest().build();
+
+        } catch (Exception e) {
+            log.error("Failed to retrieve status for batch: {}", batchId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
