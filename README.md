@@ -1,28 +1,64 @@
 # PostgreSQL CSV Loader
 
-Enterprise-grade CSV data ingestion platform for PostgreSQL with staging capabilities, batch processing, ZIP file support, and automated watch folder monitoring.
+Enterprise-grade Title D data ingestion platform for PostgreSQL with fixed schema processing, ZIP file support, automated watch folder monitoring, parent-child relationship tracking, and configurable validation rules.
 
 ## 🚀 Features
 
 ### Core Capabilities
-- **High-Performance Loading**: Uses PostgreSQL COPY command for optimal throughput
-- **Dynamic Table Creation**: Automatically creates staging tables from CSV files
-- **Staging Area Management**: Dedicated staging schema for data review and validation
-- **ZIP File Processing**: Extract and process multiple CSV files from ZIP archives
-- **Batch Processing**: Handle multiple CSV files simultaneously with detailed reporting
-- **Watch Folder Automation**: Automated file monitoring with 4-folder lifecycle
+- **Fixed Schema Processing**: Processes predefined Title D application file types (PM1-PM7, IM1-IM3)
+- **File Validation Rules**: Configurable validation rules per file pattern with auto-fix capabilities
+- **Data Transformation**: Custom transformers for data cleaning and format conversion
+- **Schema Management**: Dedicated title_d_app schema for Title D data processing and validation
+- **ZIP File Processing**: Extract and process multiple Title D files from ZIP archives with parent-child batch tracking
+- **Parent-Child Relationship Tracking**: ZIP files become parent batches, extracted files become child batches
+- **Watch Folder Automation**: Automated file monitoring with 4-folder lifecycle and concurrent processing support
 - **Idempotency**: SHA-256 checksum-based duplicate detection prevents reprocessing
-- **Dynamic Schema Detection**: Automatically detects and creates tables based on CSV structure
+- **Data Quality Tracking**: Comprehensive validation issue tracking and reporting
 - **Real-time Status**: Track processing progress with comprehensive manifest data
+- **Concurrent Processing**: Safe concurrent ZIP file processing without file collisions
 
 ### Features
-- **Comprehensive Validation**: File type, size, and format validation
+- **Title D File Processing**: Specialized processing for PM1-PM7 and IM1-IM3 file types
+- **Tab-Delimited Format**: Native support for tab-separated values without headers
+- **File Pattern Routing**: Automatic routing based on filename patterns (PM162 → pm1 table)
+- **Comprehensive Validation**: File type, size, and format validation with configurable rules
+- **Auto-Fix Capabilities**: Automatic correction of common data issues
+- **Data Transformation**: Custom transformers for date formatting and data cleaning
 - **Error Handling**: Detailed error reporting and retry mechanisms
 - **Audit Trail**: Complete processing history and manifest tracking
 - **Health Monitoring**: Database connection and system health checks
 - **RESTful API**: Full REST API with OpenAPI/Swagger documentation
 
-## 📋 Prerequisites
+## � Supported File Types & Tables
+
+The system processes predefined Title D application file types with fixed schemas:
+
+### Property Master Files (PM)
+| File Pattern | Target Table | Description | Columns |
+|-------------|-------------|-------------|---------|
+| `PM1` | `title_d_app.pm1` | Property Master Table | 17 columns (block_num, property_id_num, registration_system_code, etc.) |
+| `PM2` | `title_d_app.pm2` | Property-Instrument Relationship | 5 columns (block_num, property_id_num, lro_num, instrument_num, rule_out_ind) |
+| `PM3` | `title_d_app.pm3` | Alternative Party Information | 7 columns (block_num, property_id_num, alt_party_id_code, alt_party_name, etc.) |
+| `PM4` | `title_d_app.pm4` | Parent Property Relationships | 4 columns (block_num, property_id_num, parent_block_num, parent_property_id_num) |
+| `PM5` | `title_d_app.pm5` | Property Thumbnail/Description | 3 columns (block_num, property_id_num, thumbnail_desc) |
+| `PM6` | `title_d_app.pm6` | Property Comments | 3 columns (block_num, property_id_num, comment_desc) |
+| `PM7` | `title_d_app.pm7` | Property Legal Description | 10 columns (block_num, property_id_num, legal_desc, etc.) |
+
+### Instrument Master Files (IM)
+| File Pattern | Target Table | Description | Columns |
+|-------------|-------------|-------------|---------|
+| `IM1` | `title_d_app.im1` | Instrument Master Table | 13 columns (block_num, property_id_num, instrument_num, etc.) |
+| `IM2` | `title_d_app.im2` | Instrument Details with Date Transformation | 9 columns (includes date formatting) |
+| `IM3` | `title_d_app.im3` | Instrument Comments | 3 columns (block_num, property_id_num, comment_desc) |
+
+### Validation & Tracking Tables
+| Table | Purpose |
+|-------|---------|
+| `title_d_app.ingestion_manifest` | Processing history and status tracking |
+| `title_d_app.file_validation_rules` | Configurable validation rules per file pattern |
+| `title_d_app.file_validation_issues` | Detailed validation issues and auto-fix tracking |
+
+## �📋 Prerequisites
 
 - **Java**: 21 or higher (OpenJDK or Oracle JDK)
 - **Maven**: 3.8+ for build automation
@@ -73,42 +109,35 @@ Application starts on: `http://localhost:8081`
 
 ## 🎯 API Endpoints
 
-### Database Operations
+### ZIP Operations
 ```http
-GET  /api/v1/ingest/database/info       # Database connection details
-GET  /api/v1/ingest/database/health     # Health check
+POST /api/v1/ingest/zip/analyze         # Analyze ZIP file contents
+POST /api/v1/ingest/zip/process         # Process ZIP file with parent-child batch tracking
 ```
 
-### CSV File Operations
+### Delimited File Operations
 ```http
-POST /api/v1/ingest/csv/upload          # Upload single CSV to staging
-GET  /api/v1/ingest/csv/status/{batchId} # Get processing status
-```
-
-### ZIP File Operations
-```http
-POST /api/v1/ingest/zip/analyze         # Analyze ZIP contents
-POST /api/v1/ingest/zip/process         # Process ZIP to staging
-```
-
-### Batch Operations
-```http
-POST /api/v1/ingest/batch/process       # Process multiple CSV files
-```
-
-### Staging Management
-```http
-GET    /api/v1/ingest/staging/tables    # List staging tables
-DELETE /api/v1/ingest/staging/tables    # Delete all staging tables
+POST /api/v1/ingest/delimited/upload    # Upload single TSV/CSV file with filename routing
+GET  /api/v1/ingest/delimited/status/{batchId}  # Get processing status
 ```
 
 ### Watch Folder Operations
 ```http
 GET  /api/v1/ingest/watch-folder/status         # Get watch folder status
-GET  /api/v1/ingest/watch-folder/files          # List all files
+GET  /api/v1/ingest/watch-folder/files          # List all files in watch folders
 GET  /api/v1/ingest/watch-folder/files/{folder} # List files in specific folder
 GET  /api/v1/ingest/watch-folder/errors         # List error reports
 POST /api/v1/ingest/watch-folder/retry/{filename} # Retry failed file
+```
+
+### File Validation Operations
+```http
+GET  /api/validation/rules                    # Get all validation rules
+GET  /api/validation/rules/{filePattern}      # Get rule by file pattern
+POST /api/validation/rules                    # Create/update validation rule
+DELETE /api/validation/rules/{id}             # Delete validation rule
+PUT  /api/validation/rules/{filePattern}/enabled # Enable/disable validation for pattern
+GET  /api/validation/issues/batch/{batchId}   # Get validation issues by batch
 ```
 
 ## 🔄 Watch Folder Feature
@@ -183,33 +212,59 @@ type nul > C:\data\csv-loader\upload\orders.csv.done
 
 ## 📊 Quick Start Examples
 
-### 1. Check Database Connection
+### 1. Analyze ZIP File
 ```bash
-curl -X GET http://localhost:8081/api/v1/ingest/database/info
-```
-
-### 2. Upload Single CSV File
-```bash
-curl -X POST http://localhost:8081/api/v1/ingest/csv/upload \
-  -F "file=@orders.csv"
+curl -X POST http://localhost:8081/api/v1/ingest/zip/analyze \
+  -F "file=@title-d-export.zip"
 ```
 
 **Response:**
 ```json
 {
-  "batchId": "a1b2c3d4-1234-5678-90ab-cdef12345678",
-  "fileName": "orders.csv",
-  "tableName": "staging_orders_a1b2c3d4",
-  "fileSizeBytes": 15420,
-  "status": "COMPLETED",
-  "message": "CSV file processed to staging area successfully"
+  "zip_filename": "title-d-export.zip",
+  "total_files_extracted": 3,
+  "csv_files_found": 3,
+  "extraction_status": "SUCCESS",
+  "extracted_files": [
+    {
+      "filename": "PM162",
+      "file_type": "TSV",
+      "estimated_rows": 5000
+    }
+  ]
 }
 ```
 
-### 3. Upload ZIP File (Multiple CSVs)
+### 2. Upload Single Delimited File
+```bash
+# Upload TSV file (default format for Title D files)
+curl -X POST http://localhost:8081/api/v1/ingest/delimited/upload \
+  -F "file=@PM162"
+
+# Upload CSV file with explicit parameters
+curl -X POST "http://localhost:8081/api/v1/ingest/delimited/upload?format=csv&hasHeaders=true" \
+  -F "file=@data.csv"
+```
+
+**Response:**
+```json
+{
+  "batch_id": "a1b2c3d4-1234-5678-90ab-cdef12345678",
+  "file_name": "PM162",
+  "table_name": "pm1",
+  "file_size_bytes": 15420,
+  "status": "SUCCESS",
+  "total_records": 5000,
+  "processed_records": 5000,
+  "data_quality_status": "CLEAN",
+  "message": "File processed successfully. Loaded 5000 rows to table: pm1"
+}
+```
+
+### 3. Upload ZIP File (Multiple Title D Files)
 ```bash
 curl -X POST http://localhost:8081/api/v1/ingest/zip/process \
-  -F "file=@data-export.zip"
+  -F "file=@title-d-export.zip"
 ```
 
 **Response:**
@@ -223,35 +278,57 @@ curl -X POST http://localhost:8081/api/v1/ingest/zip/process \
   "total_rows_loaded": 15420,
   "file_results": [
     {
-      "filename": "orders.csv",
-      "table_name": "staging_orders_b2c3d4e5",
+      "filename": "PM162",
+      "table_name": "pm1",
       "status": "SUCCESS",
-      "rows_loaded": 5420
+      "rows_loaded": 5420,
+      "child_batch_id": "c3d4e5f6-7890-abcd-ef12-34567890abcd",
+      "parent_batch_id": "b2c3d4e5-5678-90ab-cdef-1234567890ab"
+    },
+    {
+      "filename": "IM262",
+      "table_name": "im2",
+      "status": "SUCCESS",
+      "rows_loaded": 5200,
+      "child_batch_id": "d4e5f678-9012-bcde-f123-4567890abcde",
+      "parent_batch_id": "b2c3d4e5-5678-90ab-cdef-1234567890ab"
     }
   ]
 }
 ```
 
+**Parent-Child Relationship:**
+- ZIP file gets a `batch_id` (parent batch)
+- Each extracted Title D file gets its own `batch_id` (child batch)
+- Child manifests include `parent_batch_id` linking back to ZIP
+- Query relationships: `SELECT * FROM ingestion_manifest WHERE parent_batch_id = 'zip-batch-id'`
+- Query relationships: `SELECT * FROM ingestion_manifest WHERE parent_batch_id = 'zip-batch-id'`
+
 ### 4. Check Processing Status
 ```bash
-curl -X GET http://localhost:8081/api/v1/ingest/csv/status/a1b2c3d4-1234-5678-90ab-cdef12345678
+curl -X GET http://localhost:8081/api/v1/ingest/delimited/status/a1b2c3d4-1234-5678-90ab-cdef12345678
 ```
 
-### 5. Query Your Staging Data
+### 5. Query Your Processed Data
 ```sql
 -- Connect to PostgreSQL
 psql -h localhost -U postgres -d your_database
 
--- List all staging tables
+-- List Title D tables
 SELECT table_name FROM information_schema.tables
-WHERE table_name LIKE 'staging_%'
+WHERE table_schema = 'title_d_app'
 ORDER BY table_name;
 
--- Query data from staging table
-SELECT * FROM staging_orders_a1b2c3d4 LIMIT 10;
+-- Query data from processed table
+SELECT * FROM title_d_app.pm1 LIMIT 10;
 
--- Check row counts
-SELECT COUNT(*) as row_count FROM staging_orders_a1b2c3d4;
+-- Check row counts for a specific file batch
+SELECT COUNT(*) as row_count FROM title_d_app.pm1
+WHERE batch_id = 'a1b2c3d4-1234-5678-90ab-cdef12345678';
+
+-- View processing manifest
+SELECT * FROM title_d_app.ingestion_manifest
+WHERE batch_id = 'a1b2c3d4-1234-5678-90ab-cdef12345678';
 ```
 
 ## 🏗️ Architecture
@@ -259,45 +336,47 @@ SELECT COUNT(*) as row_count FROM staging_orders_a1b2c3d4;
 ### System Components
 
 **Controllers:**
-- `DatabaseController` - Database connection and health monitoring
-- `CsvController` - Single CSV file processing
-- `ZipController` - ZIP file analysis and processing
-- `BatchController` - Multiple file batch processing
-- `StagingController` - Staging table management
+- `DelimitedFileController` - Single delimited file processing with filename routing
+- `ZipController` - ZIP file analysis and processing with parent-child batch tracking
 - `WatchFolderController` - Watch folder monitoring and management
 
 **Services:**
-- `CsvProcessingService` - Core CSV processing and staging table creation
-- `BatchProcessingService` - Batch operations coordination
-- `ZipProcessingService` - ZIP extraction and analysis
-- `WatchFolderService` - Automated file monitoring
-- `WatchFolderManager` - File lifecycle management across 4 folders
+- `DelimitedFileProcessingService` - Core delimited file processing and routing
+- `ZipProcessingService` - ZIP extraction and analysis with parent-child batch tracking
+- `WatchFolderService` - Automated file monitoring and lifecycle management
+- `WatchFolderManager` - File movement across 4-folder architecture
 - `DatabaseConnectionService` - Database operations and schema management
 - `IngestionManifestService` - Processing audit and tracking
+- `FileValidationService` - Configurable validation rules and issue tracking
+- `FilenameRouterService` - Automatic routing based on file patterns
+- `FileChecksumService` - SHA-256 checksum calculation for idempotency
+- `PostgresCopyService` - Efficient bulk data loading using PostgreSQL COPY
+- `CsvParsingService` - CSV/TSV parsing and data transformation
+- `TableNamingService` - Consistent table naming for fixed schema processing
 
 **Data Layer:**
-- PostgreSQL COPY command for bulk data loading
-- Staging tables with TEXT columns for all data
+- PostgreSQL COPY command for bulk data loading into fixed schema tables
+- title_d_app schema with predefined PM1-PM7 and IM1-IM3 tables
 - Ingestion manifest for processing metadata and status tracking
+- File validation rules and issues tracking for data quality assurance
 
 ### Data Flow
 
 ```
-CSV/ZIP Files → Validation → Checksum → Table Creation → COPY → Manifest → Staging
+Title D Files → Filename Pattern Routing → Fixed Schema Validation → Checksum → Table Routing → COPY → Manifest → title_d_app Schema
 ```
 
-### Table Creation Process
+### Fixed Schema Processing
 
-1. **Upload CSV File**: File is uploaded via API or watch folder
-2. **Generate Batch ID**: UUID v4 is generated (e.g., `a1b2c3d4`)
+1. **Upload Title D File**: File is uploaded via API or watch folder
+2. **Filename Pattern Recognition**: System recognizes file pattern (PM1xx → pm1 table, IM2xx → im2 table)
 3. **Checksum Calculation**: SHA-256 hash computed for idempotency
 4. **Duplicate Check**: System checks if file was previously processed
-5. **Table Name Generation**: `staging_{filename}_{batch_id_8chars}`
-   - Example: `orders.csv` → `staging_orders_a1b2c3d4`
-6. **Schema Detection**: CSV headers become column names (sanitized for SQL)
-7. **Table Creation**: `CREATE TABLE` with all columns as `TEXT` type
-8. **Data Loading**: PostgreSQL COPY command loads data efficiently
-9. **Manifest Recording**: Processing metadata saved to `ingestion_manifest`
+5. **Schema Validation**: File structure validated against predefined schema for target table
+6. **Data Transformation**: Character replacement and date formatting applied if configured
+7. **Data Loading**: PostgreSQL COPY command loads data into fixed title_d_app schema tables
+8. **Manifest Recording**: Processing metadata saved to `ingestion_manifest` table
+9. **Issue Tracking**: Any validation issues recorded in `file_validation_issues` table
 
 ### Idempotency
 
