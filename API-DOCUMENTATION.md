@@ -34,14 +34,6 @@ The system processes tab-delimited files with predefined schemas for Title D app
 http://localhost:8081
 ```
 
-## Authentication
-
-Currently, the API does not require authentication. In production environments, consider implementing:
-- API Keys
-- JWT tokens
-- OAuth 2.0
-- Basic Authentication
-
 ## Content Types
 
 ### Request Content Types
