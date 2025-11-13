@@ -2,7 +2,31 @@
 
 ## Overview
 
-The PostgreSQL CSV Loader provides a comprehensive REST API for advanced CSV data ingestion with staging capabilities, ZIP file processing, and dynamic schema evolution.
+The PostgreSQL CSV Loader provides a comprehensive REST API for processing predefined Title D application file types (PM1-PM7, IM1-IM3) with fixed schemas, ZIP file processing with parent-child batch tracking, configurable validation rules, data transformation capabilities, and concurrent processing support.
+
+## Supported File Types
+
+The system processes tab-delimited files with predefined schemas for Title D applications:
+
+### Property Master Files (PM1-PM7)
+- **PM1**: Property Master Table (17 columns) - Core property information
+- **PM2**: Property-Instrument Relationships (5 columns) - Links properties to instruments  
+- **PM3**: Alternative Party Information (7 columns) - Additional party details
+- **PM4**: Parent Property Relationships (4 columns) - Property hierarchies
+- **PM5**: Property Descriptions (3 columns) - Thumbnail/property descriptions
+- **PM6**: Property Comments (3 columns) - Additional property comments
+- **PM7**: Property Legal Descriptions (10 columns) - Legal property descriptions
+
+### Instrument Master Files (IM1-IM3)
+- **IM1**: Instrument Master Table (13 columns) - Core instrument information
+- **IM2**: Instrument Details (9 columns) - Detailed instrument data with date transformations
+- **IM3**: Instrument Comments (3 columns) - Instrument-related comments
+
+### File Validation Features
+- Configurable validation rules per file pattern
+- Auto-fix capabilities for common data issues
+- Data transformation (character replacement, date formatting)
+- Comprehensive issue tracking and reporting
 
 ## Base URL
 
@@ -29,105 +53,234 @@ Currently, the API does not require authentication. In production environments, 
 
 ## API Endpoints
 
-### 1. Database Operations
+### 1. ZIP Operations
 
-#### Get Database Connection Information
+#### Analyze ZIP File
 ```http
-GET /api/v1/ingest/database/info
+POST /api/v1/ingest/zip/analyze
 ```
 
-**Description**: Retrieves comprehensive database connection details and system status.
-
-**Response (200 OK)**:
-```json
-{
-  "database_url": "jdbc:postgresql://localhost:5432/postgres",
-  "database_name": "postgres",
-  "username": "postgres",
-  "connection_pool_size": 20,
-  "connection_status": "HEALTHY",
-  "schemas_available": ["public", "staging", "audit"],
-  "staging_schema_exists": true,
-  "server_time": "2025-10-27T23:07:30"
-}
-```
-
-**Fields**:
-- `database_url`: Full JDBC connection URL
-- `database_name`: Target database name
-- `username`: Database username in use
-- `connection_pool_size`: Current HikariCP pool size
-- `connection_status`: Connection health (HEALTHY/UNHEALTHY)
-- `schemas_available`: List of available database schemas
-- `staging_schema_exists`: Whether staging schema is ready
-- `server_time`: Current server timestamp
-
-### 2. Health Check
-
-#### Get Application Health Status
-```http
-GET /api/v1/ingest/database/health
-```
-
-**Description**: Comprehensive health check for application components.
-
-**Response (200 OK)**:
-```json
-{
-  "status": "HEALTHY",
-  "database_connection": "HEALTHY",
-  "staging_ready": true,
-  "timestamp": "2025-10-30T15:30:00"
-}
-```
-
-### 3. Single File Processing
-
-#### Upload CSV to Staging
-```http
-POST /api/v1/ingest/csv/upload
-```
-
-**Description**: Upload a single CSV file to create a staging table with automatic schema detection.
+**Description**: Extract and analyze ZIP file contents without processing data.
 
 **Request**:
 - **Content-Type**: `multipart/form-data`
-- **Body**: Form data with file parameter
+- **Body**: Form data with ZIP file
 
 **cURL Example**:
 ```bash
 curl -X POST \
-  -F "file=@orders.csv" \
-  http://localhost:8081/api/v1/ingest/staging/upload
+  -F "file=@data-export.zip" \
+  http://localhost:8081/api/v1/ingest/zip/analyze
 ```
 
 **Response (200 OK)**:
 ```json
 {
-  "batchId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileName": "orders.csv",
-  "tableName": "staging_orders_550e8400",
-  "fileSizeBytes": 1048576,
-  "status": "COMPLETED",
-  "message": "CSV file processed to staging area successfully"
+  "zip_filename": "data-export.zip",
+  "total_files_extracted": 5,
+  "csv_files_found": 3,
+  "extraction_status": "SUCCESS",
+  "extraction_path": "/tmp/csv-enterprise/extract-550e8400",
+  "extracted_files": [
+    {
+      "filename": "orders.csv",
+      "file_size": 1048576,
+      "file_type": "CSV",
+      "estimated_rows": 5000,
+      "headers_detected": ["order_id", "customer_id", "product_name", "quantity", "price"],
+      "suggested_table_name": "orders",
+      "staging_table_exists": false
+    }
+  ],
+  "processing_recommendations": [
+    "3 new tables will be created in staging schema",
+    "Estimated total rows to process: 15,000",
+    "Review table structures before proceeding to production migration",
+    "Consider processing in batches for optimal performance"
+  ],
+  "estimated_processing_time_seconds": 45
+}
+```
+
+#### Process ZIP File to Staging
+```http
+POST /api/v1/ingest/zip/process
+```
+
+**Description**: Extract ZIP file and process all CSV files to staging environment with parent-child batch tracking.
+
+**Request**:
+- **Content-Type**: `multipart/form-data`
+- **Body**: Form data with ZIP file
+
+**cURL Example**:
+```bash
+curl -X POST \
+  -F "file=@data-export.zip" \
+  http://localhost:8081/api/v1/ingest/zip/process
+```
+
+**Response (200 OK)**:
+```json
+{
+  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+  "zip_filename": "data-export.zip",
+  "processing_status": "SUCCESS",
+  "total_files_processed": 3,
+  "successful_files": 3,
+  "failed_files": 0,
+  "total_rows_loaded": 15000,
+  "processing_start_time": "2025-10-27T23:15:00",
+  "processing_end_time": "2025-10-27T23:15:45",
+  "processing_duration_ms": 45000,
+  "staging_schema": "staging",
+  "extraction_path": "/tmp/csv-enterprise/extract-550e8400",
+  "file_results": [
+    {
+      "filename": "orders.csv",
+      "table_name": "orders",
+      "status": "SUCCESS",
+      "rows_loaded": 5000,
+      "columns_created": 5,
+      "processing_time_ms": 15000,
+      "error_message": null,
+      "child_batch_id": "a1b2c3d4-e29b-41d4-a716-446655440001",
+      "parent_batch_id": "550e8400-e29b-41d4-a716-446655440000"
+    }
+  ],
+  "validation_summary": {
+    "tables_ready_for_production": 3,
+    "tables_requiring_review": 0,
+    "data_quality_issues": [],
+    "schema_conflicts": []
+  }
+}
+```
+
+**Parent-Child Relationship Fields**:
+- `batch_id`: Parent batch ID for the entire ZIP processing operation
+- `child_batch_id`: Individual batch ID for each CSV file processed from the ZIP
+- `parent_batch_id`: References the parent ZIP batch (same as `batch_id` for child records)
+
+**Query Relationships**:
+```sql
+-- Find all child batches for a ZIP file
+SELECT * FROM ingestion_manifest
+WHERE parent_batch_id = '550e8400-e29b-41d4-a716-446655440000';
+
+-- Get parent ZIP information for a child batch
+SELECT * FROM ingestion_manifest
+WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000';
+```
+
+### 2. Delimited File Operations
+
+#### Upload Delimited File (TSV/CSV)
+```http
+POST /api/v1/ingest/delimited/upload
+```
+
+**Description**: Upload a single delimited file (TSV or CSV) for processing into predefined Title D tables based on filename pattern routing.
+
+**Request**:
+- **Content-Type**: `multipart/form-data`
+- **Body**: Form data with file parameter
+- **Query Parameters**:
+  - `format`: File format (csv or tsv, default: csv)
+  - `hasHeaders`: Whether file has headers (default: true for CSV, false for TSV)
+  - `routeByFilename`: Enable filename-based routing (default: true)
+
+**Supported File Patterns**:
+- `PM1xx` → `title_d_app.pm1` table
+- `PM2xx` → `title_d_app.pm2` table
+- `PM3xx` → `title_d_app.pm3` table
+- `PM4xx` → `title_d_app.pm4` table
+- `PM5xx` → `title_d_app.pm5` table
+- `PM6xx` → `title_d_app.pm6` table
+- `PM7xx` → `title_d_app.pm7` table
+- `IM1xx` → `title_d_app.im1` table
+- `IM2xx` → `title_d_app.im2` table
+- `IM3xx` → `title_d_app.im3` table
+
+**cURL Example**:
+```bash
+# Upload TSV file with filename routing (default)
+curl -X POST \
+  -F "file=@PM162" \
+  http://localhost:8081/api/v1/ingest/delimited/upload
+
+# Upload CSV file with explicit parameters
+curl -X POST \
+  -F "file=@data.csv" \
+  "http://localhost:8081/api/v1/ingest/delimited/upload?format=csv&hasHeaders=true&routeByFilename=false"
+```
+
+**Response (200 OK)**:
+```json
+{
+  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_name": "PM162",
+  "table_name": "pm1",
+  "file_size_bytes": 1048576,
+  "status": "SUCCESS",
+  "total_records": 5000,
+  "processed_records": 5000,
+  "failed_records": 0,
+  "corrected_records": 0,
+  "warning_count": 0,
+  "error_count": 0,
+  "data_quality_status": "CLEAN",
+  "processing_start_time": "2025-11-12T10:30:00",
+  "processing_end_time": "2025-11-12T10:30:15",
+  "processing_duration_ms": 15000,
+  "message": "File processed successfully. Format: TSV, Headers: false, Routing: true. Loaded 5000 rows to table: pm1"
 }
 ```
 
 **Response (200 OK) - Already Processed (Idempotency)**:
 ```json
 {
-  "batchId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileName": "orders.csv",
+  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_name": "PM162",
   "tableName": "staging_orders_550e8400",
   "fileSizeBytes": 1048576,
   "status": "ALREADY_PROCESSED",
-  "message": "File already processed previously. Original processing completed on 2025-10-30T14:20:00. Batch ID: 550e8400-e29b-41d4-a716-446655440000. No duplicate data was inserted."
+  "message": "File already processed previously. Original processing completed on 2025-11-12T10:25:15. Batch ID: 550e8400-e29b-41d4-a716-446655440000. No duplicate data was inserted."
 }
 ```
 
-### 4. ZIP File Processing
+#### Get Delimited File Processing Status
+```http
+GET /api/v1/ingest/delimited/status/{batchId}
+```
 
-#### Analyze ZIP File Contents
+**Description**: Get the processing status and details for a specific batch.
+
+**Path Parameters**:
+- `batchId` (UUID, required): Batch ID returned from upload operation
+
+**Response (200 OK)**:
+```json
+{
+  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_name": "PM162",
+  "table_name": "pm1",
+  "status": "SUCCESS",
+  "total_records": 5000,
+  "processed_records": 5000,
+  "failed_records": 0,
+  "corrected_records": 0,
+  "warning_count": 0,
+  "error_count": 0,
+  "data_quality_status": "CLEAN",
+  "processing_start_time": "2025-11-12T10:30:00",
+  "processing_end_time": "2025-11-12T10:30:15",
+  "processing_duration_ms": 15000,
+  "error_message": null
+}
+```
+
+### 3. Watch Folder Operations
 ```http
 POST /api/v1/ingest/zip/analyze
 ```
@@ -188,7 +341,7 @@ curl -X POST \
 POST /api/v1/ingest/zip/process
 ```
 
-**Description**: Extract ZIP file and process all CSV files to staging environment.
+**Description**: Extract ZIP file and process all CSV files to staging environment with parent-child batch tracking.
 
 **Request**:
 - **Content-Type**: `multipart/form-data`
@@ -224,7 +377,9 @@ curl -X POST \
       "rows_loaded": 5000,
       "columns_created": 5,
       "processing_time_ms": 15000,
-      "error_message": null
+      "error_message": null,
+      "child_batch_id": "a1b2c3d4-e29b-41d4-a716-446655440001",
+      "parent_batch_id": "550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "filename": "customers.csv",
@@ -233,7 +388,9 @@ curl -X POST \
       "rows_loaded": 2500,
       "columns_created": 4,
       "processing_time_ms": 12000,
-      "error_message": null
+      "error_message": null,
+      "child_batch_id": "b2c3d4e5-e29b-41d4-a716-446655440002",
+      "parent_batch_id": "550e8400-e29b-41d4-a716-446655440000"
     }
   ],
   "validation_summary": {
@@ -245,135 +402,30 @@ curl -X POST \
 }
 ```
 
-### 5. Batch Processing
+**Parent-Child Relationship Fields**:
+- `batch_id`: Parent batch ID for the entire ZIP processing operation
+- `child_batch_id`: Individual batch ID for each CSV file processed from the ZIP
+- `parent_batch_id`: References the parent ZIP batch (same as `batch_id` for child records)
 
-#### Process Multiple Files to Staging
-```http
-POST /api/v1/ingest/batch/process
-```
+**Query Relationships**:
+```sql
+-- Find all child batches for a ZIP file
+SELECT * FROM ingestion_manifest
+WHERE parent_batch_id = '550e8400-e29b-41d4-a716-446655440000';
 
-**Description**: Process multiple CSV files simultaneously to staging environment.
-
-**Request**:
-- **Content-Type**: `multipart/form-data`
-- **Body**: Form data with multiple file parameters
-
-**cURL Example**:
-```bash
-curl -X POST \
-  -F "files=@orders.csv" \
-  -F "files=@customers.csv" \
-  -F "files=@products.csv" \
-  http://localhost:8081/api/v1/ingest/batch/process-to-staging
-```
-
-**Response (200 OK)**:
-```json
-{
-  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
-  "processing_status": "PARTIAL_SUCCESS",
-  "total_files_submitted": 3,
-  "successful_files": 2,
-  "failed_files": 1,
-  "total_rows_loaded": 7500,
-  "processing_start_time": "2025-10-27T23:20:00",
-  "processing_end_time": "2025-10-27T23:20:30",
-  "processing_duration_ms": 30000,
-  "staging_schema": "staging",
-  "file_results": [
-    {
-      "filename": "orders.csv",
-      "table_name": "orders",
-      "status": "SUCCESS",
-      "rows_loaded": 5000,
-      "columns_created": 5,
-      "processing_time_ms": 15000,
-      "error_message": null
-    },
-    {
-      "filename": "customers.csv",
-      "table_name": "customers",
-      "status": "SUCCESS",
-      "rows_loaded": 2500,
-      "columns_created": 4,
-      "processing_time_ms": 12000,
-      "error_message": null
-    },
-    {
-      "filename": "products.csv",
-      "table_name": "products",
-      "status": "FAILED",
-      "rows_loaded": 0,
-      "columns_created": 0,
-      "processing_time_ms": 3000,
-      "error_message": "Invalid CSV format: Missing required headers"
-    }
-  ],
-  "validation_summary": {
-    "tables_ready_for_production": 2,
-    "tables_requiring_review": 0,
-    "data_quality_issues": ["products.csv: Header validation failed"],
-    "schema_conflicts": []
-  }
+-- Get parent ZIP information for a child batch
+SELECT * FROM ingestion_manifest
 }
 ```
 
-### 6. Staging Management
-
-#### List Staging Tables
-```http
-GET /api/v1/ingest/staging/tables
-```
-
-**Description**: Get list of all staging tables filtered by the configured table prefix.
-
-**Response (200 OK)**:
-```json
-{
-  "schema": "default",
-  "table_count": 3,
-  "tables": [
-    "staging_orders_550e8400",
-    "staging_customers_661f9511",
-    "staging_products_772fa622"
-  ]
-}
-```
-
-#### Delete All Staging Tables
-```http
-DELETE /api/v1/ingest/staging/tables
-```
-
-**Description**: Drop all staging tables filtered by the configured table prefix. **WARNING: This action is irreversible!**
-
-**cURL Example**:
-```bash
-curl -X DELETE http://localhost:8081/api/v1/ingest/staging/tables
-```
-
-**Response (200 OK)**:
-```json
-{
-  "status": "SUCCESS",
-  "message": "All staging tables dropped successfully",
-  "tables_dropped": 3,
-  "dropped_tables": [
-    "staging_orders_550e8400",
-    "staging_customers_661f9511",
-    "staging_products_772fa622"
-  ]
-}
-```
-
-### 7. Status Monitoring
+### 4. Status Monitoring
 
 #### Get Processing Status
 ```http
-GET /api/v1/ingest/csv/status/{batchId}
+GET /api/v1/ingest/delimited/status/{batchId}
 ```
 
-**Description**: Get detailed status of a processing operation by batch ID.
+**Description**: Get detailed status of a delimited file processing operation by batch ID.
 
 **Path Parameters**:
 - `batchId` (string, required): Batch ID returned from processing operations
@@ -402,9 +454,7 @@ curl -X GET http://localhost:8081/api/v1/ingest/csv/status/550e8400-e29b-41d4-a7
 **Response (404 Not Found)**:
 When batch ID doesn't exist or is invalid.
 
-### 8. Watch Folder Operations
-
-#### Get Watch Folder Status
+## Request/Response Examples
 ```http
 GET /api/v1/ingest/watch-folder/status
 ```
@@ -540,6 +590,119 @@ curl -X POST http://localhost:8081/api/v1/ingest/watch-folder/retry/invalid_data
 }
 ```
 
+## Request/Response Examples
+
+#### Get All Validation Rules
+```http
+GET /api/validation/rules
+```
+
+**Description**: Retrieve all file validation rules configured in the system.
+
+**Response (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "filePattern": "PM1",
+    "tableName": "pm1",
+    "expectedTabCount": 16,
+    "validationEnabled": true,
+    "autoFixEnabled": true,
+    "rejectOnViolation": false,
+    "replaceControlChars": false,
+    "replaceNonLatinChars": false,
+    "collapseConsecutiveReplaced": false,
+    "enableDataTransformation": false,
+    "transformerClassName": null,
+    "description": "PM1 files should have 16 tabs per row (17 columns)",
+    "createdAt": "2025-11-12T10:00:00",
+    "updatedAt": "2025-11-12T10:00:00",
+    "createdBy": "system"
+  }
+]
+```
+
+#### Get Validation Rule by Pattern
+```http
+GET /api/validation/rules/{filePattern}
+```
+
+**Description**: Get validation rule for a specific file pattern.
+
+**Path Parameters**:
+- `filePattern` (string, required): File pattern (e.g., "PM1", "IM2")
+
+#### Get Validation Issues by Batch
+```http
+GET /api/validation/issues/batch/{batchId}
+```
+
+**Description**: Retrieve all validation issues for a specific processing batch.
+
+**Path Parameters**:
+- `batchId` (UUID, required): Batch ID from processing operation
+
+**Response (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "batchId": "550e8400-e29b-41d4-a716-446655440000",
+    "fileName": "PM162",
+    "lineNumber": 5,
+    "issueType": "TAB_COUNT_MISMATCH",
+    "severity": "ERROR",
+    "expectedValue": "16 tabs",
+    "actualValue": "15 tabs",
+    "description": "Row has incorrect number of tab delimiters",
+    "autoFixed": false,
+    "fixDescription": null,
+    "originalLine": "block1\tprop1\t...\tvalue",
+    "correctedLine": null,
+    "createdAt": "2025-11-12T10:30:05"
+  }
+]
+```
+
+#### Create/Update Validation Rule
+```http
+POST /api/validation/rules
+```
+
+**Description**: Create or update a file validation rule.
+
+**Request Body**:
+```json
+{
+  "filePattern": "PM1",
+  "tableName": "pm1",
+  "expectedTabCount": 16,
+  "validationEnabled": true,
+  "autoFixEnabled": true,
+  "rejectOnViolation": false,
+  "replaceControlChars": false,
+  "replaceNonLatinChars": false,
+  "collapseConsecutiveReplaced": false,
+  "enableDataTransformation": false,
+  "transformerClassName": null,
+  "description": "PM1 files should have 16 tabs per row (17 columns)"
+}
+```
+
+#### Toggle Validation for Pattern
+```http
+PUT /api/validation/rules/{filePattern}/enabled
+```
+
+**Description**: Enable or disable validation for a specific file pattern.
+
+**Path Parameters**:
+- `filePattern` (string, required): File pattern to toggle
+
+**Query Parameters**:
+- `enabled` (boolean, required): Whether to enable or disable validation
+
 ## Error Handling
 
 ### Error Response Format
@@ -576,7 +739,6 @@ All API endpoints return errors in a consistent format:
 | 409 | Conflict - Resource already exists |
 | 413 | Payload Too Large - File size exceeds limits |
 | 422 | Unprocessable Entity - Valid format but semantic errors |
-| 429 | Too Many Requests - Rate limit exceeded |
 | 500 | Internal Server Error - Server-side error |
 | 503 | Service Unavailable - Service temporarily unavailable |
 
@@ -632,76 +794,32 @@ All API endpoints return errors in a consistent format:
 }
 ```
 
-## Rate Limiting
-
-The API implements rate limiting to ensure fair usage:
-
-### Limits
-- **File Upload**: 10 requests per minute per IP
-- **Status Queries**: 100 requests per minute per IP
-- **Connection Info**: 60 requests per minute per IP
-
-### Rate Limit Headers
-
-```http
-X-RateLimit-Limit: 10
-X-RateLimit-Remaining: 8
-X-RateLimit-Reset: 1698441600
-```
-
-### Rate Limit Exceeded Response
-
-```json
-{
-  "timestamp": "2025-10-27T23:45:00",
-  "status": 429,
-  "error": "Too Many Requests",
-  "message": "Rate limit exceeded. Try again in 60 seconds",
-  "retry_after_seconds": 60
-}
-```
-
 ## Request/Response Examples
 
 ### Complete ZIP Processing Workflow
 
-#### 1. Check Connection
-```bash
-curl -X GET http://localhost:8081/api/v1/ingest/database/info
-```
-
-#### 2. Check Health
-```bash
-curl -X GET http://localhost:8081/api/v1/ingest/database/health
-```
-
-#### 3. Analyze ZIP
+#### 1. Analyze ZIP
 ```bash
 curl -X POST \
-  -F "file=@enterprise-data.zip" \
+  -F "file=@title-d-export.zip" \
   http://localhost:8081/api/v1/ingest/zip/analyze
 ```
 
-#### 4. Process to Staging
+#### 2. Process ZIP to Staging
 ```bash
 curl -X POST \
-  -F "file=@enterprise-data.zip" \
+  -F "file=@title-d-export.zip" \
   http://localhost:8081/api/v1/ingest/zip/process
 ```
 
-#### 5. Review Staging Tables
+#### 3. Monitor Processing Status
 ```bash
-curl -X GET http://localhost:8081/api/v1/ingest/staging/tables
+curl -X GET http://localhost:8081/api/v1/ingest/delimited/status/{batch_id}
 ```
 
-#### 6. Monitor Processing
+#### 4. Check Validation Issues
 ```bash
-curl -X GET http://localhost:8081/api/v1/ingest/csv/status/{batch_id}
-```
-
-#### 7. Clean Up (Delete All Staging Tables)
-```bash
-curl -X DELETE http://localhost:8081/api/v1/ingest/staging/tables
+curl -X GET http://localhost:8081/api/validation/issues/batch/{batch_id}
 ```
 
 ## Best Practices
@@ -713,10 +831,15 @@ curl -X DELETE http://localhost:8081/api/v1/ingest/staging/tables
 - **Headers**: Use descriptive, SQL-safe column names
 
 ### Performance Optimization
-- **Batch Processing**: Use batch endpoints for multiple files
-- **Staging Review**: Always review data in staging before production migration
-- **Monitoring**: Use status endpoints to track long-running operations
+- **ZIP Processing**: Use ZIP upload for multiple related files with parent-child tracking
+- **Watch Folder**: Enable automated processing for high-volume scenarios
+- **Status Monitoring**: Use status endpoints to track long-running operations
 - **Error Handling**: Implement retry logic for transient failures
+
+### Data Quality
+- **Validation Rules**: Configure file validation rules for data quality assurance
+- **Issue Tracking**: Monitor validation issues and auto-fix capabilities
+- **File Patterns**: Use consistent filename patterns for automatic routing
 
 ### Security Considerations
 - **Input Validation**: Always validate file contents and structure
