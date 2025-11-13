@@ -19,7 +19,7 @@ import java.util.Map;
  * Controller for staging table management
  * Handles listing and dropping staging tables based on configurable prefix
  */
-@RestController
+// @RestController
 @RequestMapping("/api/v1/ingest/staging")
 @CrossOrigin(origins = "*", maxAge = 3600)
 @Tag(name = "Staging Management", description = "Staging table management operations")

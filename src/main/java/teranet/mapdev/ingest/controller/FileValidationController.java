@@ -15,7 +15,7 @@ import java.util.UUID;
 /**
  * REST API for managing file validation rules and viewing validation reports
  */
-@RestController
+// @RestController
 @RequestMapping("/api/validation")
 @Slf4j
 public class FileValidationController {
