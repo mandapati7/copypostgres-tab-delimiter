@@ -122,12 +122,13 @@ public class DelimitedFileController {
                 log.info("File {} will be routed to table: {}", file.getOriginalFilename(), targetTable);
             }
 
-            // === STEP 6: Process file ===
+            // === STEP 6: Process file (API uploads are standalone, no parent batch) ===
             IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(
                     file,
                     effectiveFormat,
                     effectiveHasHeaders,
-                    effectiveRouting);
+                    effectiveRouting,
+                    null); // No parent batch for API uploads
 
             // Build response
             String message;

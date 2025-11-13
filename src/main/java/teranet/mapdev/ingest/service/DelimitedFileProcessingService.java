@@ -89,13 +89,15 @@ public class DelimitedFileProcessingService {
      * @param format          File format (csv or tsv)
      * @param hasHeaders      Whether file has a header row
      * @param routeByFilename Whether to route to table by filename
+     * @param parentBatchId   Optional parent batch ID (for ZIP file processing) - can be null
      * @return Ingestion manifest with processing results
      */
     public IngestionManifest processDelimitedFile(
             MultipartFile file,
             String format,
             boolean hasHeaders,
-            boolean routeByFilename) throws Exception {
+            boolean routeByFilename,
+            UUID parentBatchId) throws Exception {
 
         log.info("Processing delimited file: {} (format={}, hasHeaders={}, routing={})",
                 file.getOriginalFilename(), format, hasHeaders, routeByFilename);
@@ -166,8 +168,8 @@ public class DelimitedFileProcessingService {
                         columnOrder.size(), targetTable);
             }
 
-            // Step 4: Create manifest
-            manifest = createManifest(file, checksum, targetTable);
+            // Step 4: Create manifest (with optional parent batch ID)
+            manifest = createManifest(file, checksum, targetTable, parentBatchId);
 
             // Step 5: Validate and fix file BEFORE loading (if validation is enabled)
             InputStream fileStreamToLoad;
@@ -304,11 +306,18 @@ public class DelimitedFileProcessingService {
 
     /**
      * Create ingestion manifest
+     * 
+     * @param file The file to create manifest for
+     * @param checksum File checksum
+     * @param tableName Target table name
+     * @param parentBatchId Optional parent batch ID (for ZIP processing) - can be null
+     * @return Created manifest
      */
     private IngestionManifest createManifest(
             MultipartFile file,
             String checksum,
-            String tableName) throws Exception {
+            String tableName,
+            UUID parentBatchId) throws Exception {
 
         IngestionManifest manifest = new IngestionManifest(
                 file.getOriginalFilename(),
@@ -317,6 +326,7 @@ public class DelimitedFileProcessingService {
 
         manifest.setContentType(file.getContentType());
         manifest.setBatchId(UUID.randomUUID());
+        manifest.setParentBatchId(parentBatchId); // Set parent batch ID if provided (for ZIP processing)
         manifest.setTableName(tableName); // Store fully qualified table name
         manifest.markAsProcessing(); // Sets status to PROCESSING and startedAt timestamp
 

@@ -347,12 +347,15 @@ public class ZipProcessingService {
 
     /**
      * Creates temporary directory for ZIP extraction
+     * Uses UUID to ensure unique directory for concurrent ZIP processing
      * @return path to temporary directory
      */
     private Path createTemporaryExtractionDir() {
         try {
+            // Use UUID instead of timestamp to guarantee uniqueness for concurrent processing
+            String uniqueId = java.util.UUID.randomUUID().toString();
             Path tempDir = Paths.get(System.getProperty("java.io.tmpdir"), TEMP_EXTRACTION_DIR, 
-                                   "extract_" + System.currentTimeMillis());
+                                   "extract_" + uniqueId);
             Files.createDirectories(tempDir);
             
             logger.debug("Created temporary extraction directory: {}", tempDir);

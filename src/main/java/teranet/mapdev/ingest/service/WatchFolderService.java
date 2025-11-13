@@ -385,7 +385,9 @@ public class WatchFolderService {
 
             boolean hasHeadersForFormat = ingestConfig.hasHeadersForFormat(effectiveFormat);
 
-            IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(multipartFile, effectiveFormat, hasHeadersForFormat, true);
+            // Process standalone CSV file (no parent batch)
+            IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(
+                    multipartFile, effectiveFormat, hasHeadersForFormat, true, null);
 
             // Use existing CSV processing service
 

@@ -278,11 +278,13 @@ public class BatchProcessingService {
             // Format: tsv (tab-delimited)
             // Has headers: false
             // Route by filename: true (PM162 -> staging_pm1, IM262 -> staging_im2)
+            // Pass parentBatchId to link child manifest to parent ZIP manifest
             IngestionManifest manifest = delimitedFileProcessingService.processDelimitedFile(
                     csvFile,
                     "tsv", // Tab-delimited format
                     false, // No headers
-                    true // Route by filename (PM162 -> staging_pm1)
+                    true, // Route by filename (PM162 -> staging_pm1)
+                    parentBatchId // Link to parent ZIP batch
             );
 
             long processingTime = System.currentTimeMillis() - startTime;

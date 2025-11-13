@@ -66,7 +66,7 @@ class BatchProcessingServiceTest {
                 when(manifestService.save(any())).thenReturn(zipManifest);
                 when(zipProcessingService.analyzeZipFile(any())).thenReturn(createAnalysis(List.of("f1.csv")));
                 when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean())).thenReturn(csv1);
+                                anyBoolean(), any())).thenReturn(csv1);
                 when(filenameRouterService.resolveTableName(anyString())).thenReturn("staging_f1_abc");
 
                 MockMultipartFile zip = createZip("test.zip", Map.of("f1.csv", "id,name\n1,A"));
@@ -75,7 +75,7 @@ class BatchProcessingServiceTest {
                 assertThat(result.getProcessingStatus()).isEqualTo("SUCCESS");
                 assertThat(result.getTotalFilesProcessed()).isEqualTo(1);
                 verify(delimitedFileProcessingService).processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean());
+                                anyBoolean(), any());
         }
 
         @Test
@@ -88,7 +88,7 @@ class BatchProcessingServiceTest {
 
                 assertThat(result.getProcessingStatus()).isEqualTo("ALREADY_PROCESSED");
                 verify(delimitedFileProcessingService, never()).processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean());
+                                anyBoolean(), any());
         }
 
         @Test
@@ -125,7 +125,7 @@ class BatchProcessingServiceTest {
                 when(zipProcessingService.analyzeZipFile(any()))
                                 .thenReturn(createAnalysis(List.of("f1.csv", "f2.csv")));
                 when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean()))
+                                anyBoolean(), any()))
                                 .thenReturn(csv1, csv2);
                 when(filenameRouterService.resolveTableName(anyString()))
                                 .thenReturn("staging_f1_abc", "staging_f2_abc");
@@ -155,7 +155,7 @@ class BatchProcessingServiceTest {
                 when(zipProcessingService.analyzeZipFile(any()))
                                 .thenReturn(createAnalysis(List.of("good.csv", "bad.csv")));
                 when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean()))
+                                anyBoolean(), any()))
                                 .thenReturn(csv1)
                                 .thenThrow(new RuntimeException("Parse error"));
                 when(filenameRouterService.resolveTableName(anyString()))
@@ -197,7 +197,7 @@ class BatchProcessingServiceTest {
                 when(zipProcessingService.analyzeZipFile(any()))
                                 .thenReturn(createAnalysis(List.of("empty.csv")));
                 when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean()))
+                                anyBoolean(), any()))
                                 .thenReturn(emptyCsv);
                 when(filenameRouterService.resolveTableName(anyString()))
                                 .thenReturn("staging_empty");
@@ -228,7 +228,7 @@ class BatchProcessingServiceTest {
                 when(zipProcessingService.analyzeZipFile(any()))
                                 .thenReturn(createAnalysis(List.of("dup1.csv", "dup2.csv")));
                 when(delimitedFileProcessingService.processDelimitedFile(any(), anyString(), anyBoolean(),
-                                anyBoolean()))
+                                anyBoolean(), any()))
                                 .thenReturn(dup1, dup2);
                 when(filenameRouterService.resolveTableName(anyString()))
                                 .thenReturn("staging_dup1", "staging_dup2");
