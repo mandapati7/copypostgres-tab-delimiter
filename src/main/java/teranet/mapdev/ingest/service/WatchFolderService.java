@@ -428,6 +428,29 @@ public class WatchFolderService {
             logger.info("Using BatchProcessingService to process ZIP file with child CSV manifests");
             BatchProcessingResultDto batchResult = batchProcessingService.processBatchFromZip(multipartFile);
 
+            // Check if this was a duplicate file (already processed)
+            if ("ALREADY_PROCESSED".equals(batchResult.getProcessingStatus())) {
+                logger.info("[DUPLICATE] File was already processed - Batch ID: {}", batchResult.getBatchId());
+                
+                // Retrieve the existing manifest
+                UUID existingBatchId = UUID.fromString(batchResult.getBatchId());
+                IngestionManifest existingManifest = manifestService.findByBatchId(existingBatchId);
+                
+                if (existingManifest != null) {
+                    logger.info("[DUPLICATE] Original processing completed at: {}", existingManifest.getCompletedAt());
+                    return existingManifest;
+                } else {
+                    logger.warn("[DUPLICATE] Could not find existing manifest for batch ID: {}", existingBatchId);
+                    // Create a duplicate manifest entry for tracking
+                    IngestionManifest duplicateManifest = new IngestionManifest();
+                    duplicateManifest.setFileName(zipFilePath.getFileName().toString());
+                    duplicateManifest.setStatus(IngestionManifest.Status.COMPLETED);
+                    duplicateManifest.setErrorMessage("Duplicate file - original batch: " + batchResult.getBatchId());
+                    duplicateManifest.setTotalRecords(batchResult.getTotalRowsLoaded());
+                    return duplicateManifest;
+                }
+            }
+
             // Retrieve the parent manifest created by BatchProcessingService
             UUID parentBatchId = UUID.fromString(batchResult.getBatchId());
             IngestionManifest parentManifest = manifestService.findByBatchId(parentBatchId);

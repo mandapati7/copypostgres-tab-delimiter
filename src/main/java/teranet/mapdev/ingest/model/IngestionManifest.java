@@ -21,7 +21,7 @@ import java.util.UUID;
 public class IngestionManifest {
 
     public enum Status {
-        PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+        PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED, DUPLICATE
     }
 
     @Id

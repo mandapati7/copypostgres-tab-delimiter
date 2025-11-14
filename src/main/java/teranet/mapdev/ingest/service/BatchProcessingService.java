@@ -70,6 +70,9 @@ public class BatchProcessingService {
                         checksum,
                         existingManifest.getBatchId());
 
+                logger.info("Creating manifest entry to track duplicate attempt");
+                createDuplicateManifestEntry(zipFile, checksum, existingManifest, startTime);
+
                 // Return existing processing result - don't reprocess
                 return createDuplicateBatchResult(existingManifest, startTime);
             }
@@ -596,5 +599,41 @@ public class BatchProcessingService {
         result.setValidationSummary(validationSummary);
 
         return result;
+    }
+
+    /**
+     * Create a manifest entry to track a duplicate upload attempt
+     */
+    private void createDuplicateManifestEntry(MultipartFile zipFile, String checksum,
+            IngestionManifest originalManifest, LocalDateTime attemptTime) {
+        try {
+            IngestionManifest duplicateEntry = new IngestionManifest();
+            duplicateEntry.setBatchId(UUID.randomUUID());
+            duplicateEntry.setFileName(zipFile.getOriginalFilename());
+            duplicateEntry.setFileChecksum(checksum);
+            duplicateEntry.setStatus(IngestionManifest.Status.DUPLICATE);
+            duplicateEntry.setStartedAt(attemptTime);
+            duplicateEntry.setCompletedAt(LocalDateTime.now());
+            duplicateEntry.setProcessingDurationMs(
+                    java.time.Duration.between(attemptTime, LocalDateTime.now()).toMillis());
+
+            // Reference the original batch in error message
+            duplicateEntry.setErrorMessage(
+                    String.format("Duplicate of batch %s (processed on %s)",
+                            originalManifest.getBatchId(),
+                            originalManifest.getCompletedAt()));
+
+            // Copy metadata from original
+            duplicateEntry.setTotalRecords(originalManifest.getTotalRecords());
+            duplicateEntry.setTableName(originalManifest.getTableName());
+
+            // Save the duplicate tracking entry
+            manifestService.save(duplicateEntry);
+
+            logger.info("Created duplicate tracking manifest entry: {}", duplicateEntry.getBatchId());
+        } catch (Exception e) {
+            logger.warn("Failed to create duplicate tracking manifest entry", e);
+            // Don't fail the main process if tracking fails
+        }
     }
 }

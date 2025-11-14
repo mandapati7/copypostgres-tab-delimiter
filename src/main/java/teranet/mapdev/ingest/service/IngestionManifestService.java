@@ -74,8 +74,10 @@ public class IngestionManifestService {
      */
     public IngestionManifest findByChecksum(String checksum) {
         try {
-            return repository.findFirstByFileChecksumOrderByCreatedAtDesc(checksum).orElse(null);
-        } catch (Exception e) {
+            return repository.findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(
+                    checksum,
+                    IngestionManifest.Status.COMPLETED).orElse(null);
+                } catch (Exception e) {
             logger.warn("Could not search for existing manifest by checksum: {}", e.getMessage());
             return null;
         }

@@ -28,6 +28,13 @@ public interface IngestionManifestRepository extends JpaRepository<IngestionMani
     Optional<IngestionManifest> findFirstByFileChecksumOrderByCreatedAtDesc(String fileChecksum);
     
     /**
+     * Find manifest by file checksum with COMPLETED status only
+     * For duplicate detection - only checks against successfully processed files
+     * Returns the most recently completed manifest with this checksum
+     */
+    Optional<IngestionManifest> findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(String fileChecksum, IngestionManifest.Status status);
+    
+    /**
      * Find all child manifests by parent batch ID (for ZIP processing)
      */
     List<IngestionManifest> findByParentBatchIdOrderByCreatedAt(UUID parentBatchId);
