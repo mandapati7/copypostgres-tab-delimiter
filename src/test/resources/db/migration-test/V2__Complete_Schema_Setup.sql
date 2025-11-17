@@ -20,13 +20,22 @@
 -- SECTION 1: CREATE SCHEMA
 -- =====================================================
 
-CREATE SCHEMA IF NOT EXISTS title_d_app;
+CREATE SCHEMA IF NOT EXISTS title_d_app_int;
+
+-- =====================================================
+-- SECTION 1.1: CREATE ENUM TYPES
+-- =====================================================
+
+-- Create ingestion status enum
+CREATE TYPE title_d_app_int.ingestion_status AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', 'DUPLICATE');
 
 -- =====================================================
 -- SECTION 2: INGESTION MANIFEST TABLE
 -- =====================================================
 
-CREATE TABLE IF NOT EXISTS title_d_app.ingestion_manifest (
+DROP TABLE IF EXISTS title_d_app_int.ingestion_manifest CASCADE;
+
+CREATE TABLE title_d_app_int.ingestion_manifest (
     id BIGSERIAL PRIMARY KEY,
     batch_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     file_name VARCHAR(255) NOT NULL,
@@ -74,7 +83,7 @@ CREATE TABLE IF NOT EXISTS title_d_app.ingestion_manifest (
 );
 
 -- Add data quality columns to existing table
-ALTER TABLE title_d_app.ingestion_manifest 
+ALTER TABLE title_d_app_int.ingestion_manifest 
 ADD COLUMN IF NOT EXISTS corrected_records BIGINT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS warning_count INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS error_count INTEGER DEFAULT 0,
@@ -82,19 +91,19 @@ ADD COLUMN IF NOT EXISTS data_quality_status VARCHAR(20) DEFAULT 'CLEAN',
 ADD COLUMN IF NOT EXISTS table_name VARCHAR(100);
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_manifest_batch_id ON title_d_app.ingestion_manifest(batch_id);
-CREATE INDEX IF NOT EXISTS idx_manifest_status ON title_d_app.ingestion_manifest(status);
-CREATE INDEX IF NOT EXISTS idx_manifest_checksum ON title_d_app.ingestion_manifest(file_checksum);
-CREATE INDEX IF NOT EXISTS idx_manifest_data_quality ON title_d_app.ingestion_manifest(data_quality_status, created_at);
-CREATE INDEX IF NOT EXISTS idx_manifest_quality_metrics ON title_d_app.ingestion_manifest(file_name, created_at, data_quality_status);
+CREATE INDEX IF NOT EXISTS idx_manifest_batch_id ON title_d_app_int.ingestion_manifest(batch_id);
+CREATE INDEX IF NOT EXISTS idx_manifest_status ON title_d_app_int.ingestion_manifest(status);
+CREATE INDEX IF NOT EXISTS idx_manifest_checksum ON title_d_app_int.ingestion_manifest(file_checksum);
+CREATE INDEX IF NOT EXISTS idx_manifest_data_quality ON title_d_app_int.ingestion_manifest(data_quality_status, created_at);
+CREATE INDEX IF NOT EXISTS idx_manifest_quality_metrics ON title_d_app_int.ingestion_manifest(file_name, created_at, data_quality_status);
 
 -- =====================================================
 -- SECTION 4: TITLE D APP TABLES (PM1-PM7, IM1-IM3)
 -- =====================================================
 
 -- PM1: Property Master Table
-DROP TABLE IF EXISTS title_d_app.pm1 CASCADE;
-CREATE TABLE title_d_app.pm1 (
+DROP TABLE IF EXISTS title_d_app_int.pm1 CASCADE;
+CREATE TABLE title_d_app_int.pm1 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     registration_system_code VARCHAR(1) NULL,
@@ -118,12 +127,12 @@ CREATE TABLE title_d_app.pm1 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm1_blk_pid_batch ON title_d_app.pm1 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm1_batch_id ON title_d_app.pm1(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm1_blk_pid_batch ON title_d_app_int.pm1 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm1_batch_id ON title_d_app_int.pm1(batch_id);
 
 -- PM2: Property-Instrument Relationship
-DROP TABLE IF EXISTS title_d_app.pm2 CASCADE;
-CREATE TABLE title_d_app.pm2 (
+DROP TABLE IF EXISTS title_d_app_int.pm2 CASCADE;
+CREATE TABLE title_d_app_int.pm2 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     lro_num VARCHAR(2) NOT NULL,
@@ -136,12 +145,12 @@ CREATE TABLE title_d_app.pm2 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm2_seq_id_batch ON title_d_app.pm2 USING btree (batch_id, seq_id);
-CREATE INDEX IF NOT EXISTS idx_pm2_batch_id ON title_d_app.pm2(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm2_seq_id_batch ON title_d_app_int.pm2 USING btree (batch_id, seq_id);
+CREATE INDEX IF NOT EXISTS idx_pm2_batch_id ON title_d_app_int.pm2(batch_id);
 
 -- PM3: Alternative Party Information
-DROP TABLE IF EXISTS title_d_app.pm3 CASCADE;
-CREATE TABLE title_d_app.pm3 (
+DROP TABLE IF EXISTS title_d_app_int.pm3 CASCADE;
+CREATE TABLE title_d_app_int.pm3 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     alt_party_id_code VARCHAR(6) NULL,
@@ -156,12 +165,12 @@ CREATE TABLE title_d_app.pm3 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm3_blk_pid_batch ON title_d_app.pm3 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm3_batch_id ON title_d_app.pm3(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm3_blk_pid_batch ON title_d_app_int.pm3 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm3_batch_id ON title_d_app_int.pm3(batch_id);
 
 -- PM4: Parent Property Relationships
-DROP TABLE IF EXISTS title_d_app.pm4 CASCADE;
-CREATE TABLE title_d_app.pm4 (
+DROP TABLE IF EXISTS title_d_app_int.pm4 CASCADE;
+CREATE TABLE title_d_app_int.pm4 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     parent_block_num VARCHAR(5) NOT NULL,
@@ -172,12 +181,12 @@ CREATE TABLE title_d_app.pm4 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm4_blk_pid_batch ON title_d_app.pm4 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm4_batch_id ON title_d_app.pm4(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm4_blk_pid_batch ON title_d_app_int.pm4 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm4_batch_id ON title_d_app_int.pm4(batch_id);
 
 -- PM5: Property Thumbnail/Description
-DROP TABLE IF EXISTS title_d_app.pm5 CASCADE;
-CREATE TABLE title_d_app.pm5 (
+DROP TABLE IF EXISTS title_d_app_int.pm5 CASCADE;
+CREATE TABLE title_d_app_int.pm5 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     thumbnail_desc TEXT NULL,
@@ -187,12 +196,12 @@ CREATE TABLE title_d_app.pm5 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm5_blk_pid_batch ON title_d_app.pm5 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm5_batch_id ON title_d_app.pm5(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm5_blk_pid_batch ON title_d_app_int.pm5 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm5_batch_id ON title_d_app_int.pm5(batch_id);
 
 -- PM6: Property Comments
-DROP TABLE IF EXISTS title_d_app.pm6 CASCADE;
-CREATE TABLE title_d_app.pm6 (
+DROP TABLE IF EXISTS title_d_app_int.pm6 CASCADE;
+CREATE TABLE title_d_app_int.pm6 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     comment_desc VARCHAR(255) NULL,
@@ -202,12 +211,12 @@ CREATE TABLE title_d_app.pm6 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm6_blk_pid_batch ON title_d_app.pm6 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm6_batch_id ON title_d_app.pm6(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm6_blk_pid_batch ON title_d_app_int.pm6 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm6_batch_id ON title_d_app_int.pm6(batch_id);
 
 -- PM7: Property Address Information
-DROP TABLE IF EXISTS title_d_app.pm7 CASCADE;
-CREATE TABLE title_d_app.pm7 (
+DROP TABLE IF EXISTS title_d_app_int.pm7 CASCADE;
+CREATE TABLE title_d_app_int.pm7 (
     block_num VARCHAR(5) NOT NULL,
     property_id_num VARCHAR(4) NOT NULL,
     assessment_num VARCHAR(15) NULL,
@@ -224,12 +233,12 @@ CREATE TABLE title_d_app.pm7 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_pm7_blk_pid_batch ON title_d_app.pm7 USING btree (batch_id, block_num, property_id_num);
-CREATE INDEX IF NOT EXISTS idx_pm7_batch_id ON title_d_app.pm7(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pm7_blk_pid_batch ON title_d_app_int.pm7 USING btree (batch_id, block_num, property_id_num);
+CREATE INDEX IF NOT EXISTS idx_pm7_batch_id ON title_d_app_int.pm7(batch_id);
 
 -- IM1: Instrument Master Table
-DROP TABLE IF EXISTS title_d_app.im1 CASCADE;
-CREATE TABLE title_d_app.im1 (
+DROP TABLE IF EXISTS title_d_app_int.im1 CASCADE;
+CREATE TABLE title_d_app_int.im1 (
     lro_num VARCHAR(2) NOT NULL,
     instrument_num VARCHAR(10) NOT NULL,
     registration_date TIMESTAMP(0) NULL,
@@ -249,14 +258,14 @@ CREATE TABLE title_d_app.im1 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_im1_lro_instr_batch ON title_d_app.im1 USING btree (batch_id, instrument_num, lro_num);
-CREATE INDEX IF NOT EXISTS idx_im1_batch_id ON title_d_app.im1(batch_id);
+CREATE INDEX IF NOT EXISTS idx_im1_lro_instr_batch ON title_d_app_int.im1 USING btree (batch_id, instrument_num, lro_num);
+CREATE INDEX IF NOT EXISTS idx_im1_batch_id ON title_d_app_int.im1(batch_id);
 
 -- IM2: Instrument Party Information
 -- NOTE: This table structure matches the SOURCE FILE order (not alphabetical)
 -- party_b_day is at position 9 (matches actual database schema)
-DROP TABLE IF EXISTS title_d_app.im2 CASCADE;
-CREATE TABLE title_d_app.im2 (
+DROP TABLE IF EXISTS title_d_app_int.im2 CASCADE;
+CREATE TABLE title_d_app_int.im2 (
     lro_num VARCHAR(2) NOT NULL,
     instrument_num VARCHAR(10) NOT NULL,
     to_from_ind VARCHAR(1) NULL,
@@ -272,12 +281,12 @@ CREATE TABLE title_d_app.im2 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_im2_lro_instr_batch ON title_d_app.im2 USING btree (batch_id, instrument_num, lro_num);
-CREATE INDEX IF NOT EXISTS idx_im2_batch_id ON title_d_app.im2(batch_id);
+CREATE INDEX IF NOT EXISTS idx_im2_lro_instr_batch ON title_d_app_int.im2 USING btree (batch_id, instrument_num, lro_num);
+CREATE INDEX IF NOT EXISTS idx_im2_batch_id ON title_d_app_int.im2(batch_id);
 
 -- IM3: Instrument Comments
-DROP TABLE IF EXISTS title_d_app.im3 CASCADE;
-CREATE TABLE title_d_app.im3 (
+DROP TABLE IF EXISTS title_d_app_int.im3 CASCADE;
+CREATE TABLE title_d_app_int.im3 (
     lro_num VARCHAR(2) NOT NULL,
     instrument_num VARCHAR(10) NOT NULL,
     comment_desc VARCHAR(255) NULL,
@@ -287,15 +296,15 @@ CREATE TABLE title_d_app.im3 (
     row_number BIGSERIAL,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_im3_lro_instr_batch ON title_d_app.im3 USING btree (batch_id, instrument_num, lro_num);
-CREATE INDEX IF NOT EXISTS idx_im3_batch_id ON title_d_app.im3(batch_id);
+CREATE INDEX IF NOT EXISTS idx_im3_lro_instr_batch ON title_d_app_int.im3 USING btree (batch_id, instrument_num, lro_num);
+CREATE INDEX IF NOT EXISTS idx_im3_batch_id ON title_d_app_int.im3(batch_id);
 
 -- =====================================================
 -- SECTION 5: FILE VALIDATION TABLES
 -- =====================================================
 
 -- File Validation Rules
-CREATE TABLE IF NOT EXISTS title_d_app.file_validation_rules (
+CREATE TABLE IF NOT EXISTS title_d_app_int.file_validation_rules (
     id BIGSERIAL PRIMARY KEY,
     file_pattern VARCHAR(100) NOT NULL UNIQUE,
     table_name VARCHAR(100),
@@ -319,10 +328,10 @@ CREATE TABLE IF NOT EXISTS title_d_app.file_validation_rules (
     created_by VARCHAR(100) DEFAULT 'system'
 );
 
-CREATE INDEX IF NOT EXISTS idx_validation_rules_pattern ON title_d_app.file_validation_rules(file_pattern);
+CREATE INDEX IF NOT EXISTS idx_validation_rules_pattern ON title_d_app_int.file_validation_rules(file_pattern);
 
 -- File Validation Issues
-CREATE TABLE IF NOT EXISTS title_d_app.file_validation_issues (
+CREATE TABLE IF NOT EXISTS title_d_app_int.file_validation_issues (
     id BIGSERIAL PRIMARY KEY,
     batch_id UUID NOT NULL,
     file_name VARCHAR(255) NOT NULL,
@@ -339,16 +348,16 @@ CREATE TABLE IF NOT EXISTS title_d_app.file_validation_issues (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_validation_batch ON title_d_app.file_validation_issues(batch_id);
-CREATE INDEX IF NOT EXISTS idx_validation_severity ON title_d_app.file_validation_issues(severity);
-CREATE INDEX IF NOT EXISTS idx_validation_created ON title_d_app.file_validation_issues(created_at);
+CREATE INDEX IF NOT EXISTS idx_validation_batch ON title_d_app_int.file_validation_issues(batch_id);
+CREATE INDEX IF NOT EXISTS idx_validation_severity ON title_d_app_int.file_validation_issues(severity);
+CREATE INDEX IF NOT EXISTS idx_validation_created ON title_d_app_int.file_validation_issues(created_at);
 
 -- =====================================================
 -- SECTION 6: INSERT DEFAULT VALIDATION RULES
 -- =====================================================
 
 -- Insert or update validation rules
-INSERT INTO title_d_app.file_validation_rules (
+INSERT INTO title_d_app_int.file_validation_rules (
     file_pattern, table_name, expected_tab_count, 
     validation_enabled, auto_fix_enabled, reject_on_violation,
     replace_control_chars, replace_non_latin_chars, collapse_consecutive_replaced,
@@ -393,16 +402,16 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger for ingestion_manifest
-DROP TRIGGER IF EXISTS trigger_update_ingestion_manifest_updated_at ON title_d_app.ingestion_manifest;
+DROP TRIGGER IF EXISTS trigger_update_ingestion_manifest_updated_at ON title_d_app_int.ingestion_manifest;
 CREATE TRIGGER trigger_update_ingestion_manifest_updated_at
-    BEFORE UPDATE ON title_d_app.ingestion_manifest
+    BEFORE UPDATE ON title_d_app_int.ingestion_manifest
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Trigger for file_validation_rules
-DROP TRIGGER IF EXISTS trigger_update_validation_rules_updated_at ON title_d_app.file_validation_rules;
+DROP TRIGGER IF EXISTS trigger_update_validation_rules_updated_at ON title_d_app_int.file_validation_rules;
 CREATE TRIGGER trigger_update_validation_rules_updated_at
-    BEFORE UPDATE ON title_d_app.file_validation_rules
+    BEFORE UPDATE ON title_d_app_int.file_validation_rules
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -410,61 +419,31 @@ CREATE TRIGGER trigger_update_validation_rules_updated_at
 -- SECTION 8: COMMENTS FOR DOCUMENTATION
 -- =====================================================
 
-COMMENT ON TABLE title_d_app.ingestion_manifest IS 'Tracks all file ingestion attempts with processing status and metrics';
-COMMENT ON TABLE title_d_app.file_validation_rules IS 'Configuration for file validation rules per file pattern';
-COMMENT ON TABLE title_d_app.file_validation_issues IS 'Tracks all validation issues found during file processing';
+COMMENT ON TABLE title_d_app_int.ingestion_manifest IS 'Tracks all file ingestion attempts with processing status and metrics';
+COMMENT ON TABLE title_d_app_int.file_validation_rules IS 'Configuration for file validation rules per file pattern';
+COMMENT ON TABLE title_d_app_int.file_validation_issues IS 'Tracks all validation issues found during file processing';
 
-COMMENT ON TABLE title_d_app.pm1 IS 'Property Master Table - Core property information';
-COMMENT ON TABLE title_d_app.pm2 IS 'Property-Instrument Relationship - Links properties to instruments';
-COMMENT ON TABLE title_d_app.pm3 IS 'Alternative Party Information - Alternate party details and ownership';
-COMMENT ON TABLE title_d_app.pm4 IS 'Parent Property Relationships - Hierarchical property structure';
-COMMENT ON TABLE title_d_app.pm5 IS 'Property Thumbnails - Visual or text descriptions';
-COMMENT ON TABLE title_d_app.pm6 IS 'Property Comments - Additional property notes';
-COMMENT ON TABLE title_d_app.pm7 IS 'Property Address Information - Detailed location data';
+COMMENT ON TABLE title_d_app_int.pm1 IS 'Property Master Table - Core property information';
+COMMENT ON TABLE title_d_app_int.pm2 IS 'Property-Instrument Relationship - Links properties to instruments';
+COMMENT ON TABLE title_d_app_int.pm3 IS 'Alternative Party Information - Alternate party details and ownership';
+COMMENT ON TABLE title_d_app_int.pm4 IS 'Parent Property Relationships - Hierarchical property structure';
+COMMENT ON TABLE title_d_app_int.pm5 IS 'Property Thumbnails - Visual or text descriptions';
+COMMENT ON TABLE title_d_app_int.pm6 IS 'Property Comments - Additional property notes';
+COMMENT ON TABLE title_d_app_int.pm7 IS 'Property Address Information - Detailed location data';
 
-COMMENT ON TABLE title_d_app.im1 IS 'Instrument Master Table - Core instrument registration data';
-COMMENT ON TABLE title_d_app.im2 IS 'Instrument Party Information - Party relationships with SOURCE FILE column order (party_b_day at position 4)';
-COMMENT ON TABLE title_d_app.im3 IS 'Instrument Comments - Additional instrument notes';
+COMMENT ON TABLE title_d_app_int.im1 IS 'Instrument Master Table - Core instrument registration data';
+COMMENT ON TABLE title_d_app_int.im2 IS 'Instrument Party Information - Party relationships with SOURCE FILE column order (party_b_day at position 4)';
+COMMENT ON TABLE title_d_app_int.im3 IS 'Instrument Comments - Additional instrument notes';
 
-COMMENT ON COLUMN title_d_app.ingestion_manifest.corrected_records IS 'Number of records auto-corrected during validation';
-COMMENT ON COLUMN title_d_app.ingestion_manifest.data_quality_status IS 'Overall data quality: CLEAN, CORRECTED, WITH_WARNINGS, WITH_ERRORS, REJECTED';
+COMMENT ON COLUMN title_d_app_int.ingestion_manifest.corrected_records IS 'Number of records auto-corrected during validation';
+COMMENT ON COLUMN title_d_app_int.ingestion_manifest.data_quality_status IS 'Overall data quality: CLEAN, CORRECTED, WITH_WARNINGS, WITH_ERRORS, REJECTED';
 
-COMMENT ON COLUMN title_d_app.file_validation_rules.replace_control_chars IS 'Replace control characters with asterisk (*)';
-COMMENT ON COLUMN title_d_app.file_validation_rules.replace_non_latin_chars IS 'Replace non-BASIC_LATIN characters with asterisk (*)';
-COMMENT ON COLUMN title_d_app.file_validation_rules.collapse_consecutive_replaced IS 'Collapse consecutive asterisks to single asterisk';
-COMMENT ON COLUMN title_d_app.file_validation_rules.enable_data_transformation IS 'Enable custom data transformations for this file pattern';
-COMMENT ON COLUMN title_d_app.file_validation_rules.transformer_class_name IS 'Fully qualified Java class name implementing DataTransformer interface';
-
--- =====================================================
--- SECTION 9: VERIFY SETUP
--- =====================================================
-
--- Display summary of created objects
-DO $$
-DECLARE
-    table_count INTEGER;
-BEGIN
-    SELECT COUNT(*) INTO table_count 
-    FROM information_schema.tables 
-    WHERE table_schema = 'title_d_app';
-    
-    RAISE NOTICE '=====================================================';
-    RAISE NOTICE 'SCHEMA SETUP COMPLETE';
-    RAISE NOTICE '=====================================================';
-    RAISE NOTICE 'Total tables in title_d_app schema: %', table_count;
-    RAISE NOTICE '=====================================================';
-    
-    -- List all tables
-    RAISE NOTICE 'Tables created:';
-    FOR table_name IN 
-        SELECT t.table_name 
-        FROM information_schema.tables t
-        WHERE t.table_schema = 'title_d_app'
-        ORDER BY t.table_name
-    LOOP
-        RAISE NOTICE '  - %', table_name;
-    END LOOP;
-END $$;
+COMMENT ON COLUMN title_d_app_int.file_validation_rules.replace_control_chars IS 'Replace control characters with asterisk (*)';
+COMMENT ON COLUMN title_d_app_int.file_validation_rules.replace_non_latin_chars IS 'Replace non-BASIC_LATIN characters with asterisk (*)';
+COMMENT ON COLUMN title_d_app_int.file_validation_rules.collapse_consecutive_replaced IS 'Collapse consecutive asterisks to single asterisk';
+COMMENT ON COLUMN title_d_app_int.file_validation_rules.enable_data_transformation IS 'Enable custom data transformations for this file pattern';
+COMMENT ON COLUMN title_d_app_int.file_validation_rules.transformer_class_name IS 'Fully qualified Java class name implementing DataTransformer interface';
+ 
 
 -- Verify column order for IM2 (should show party_b_day at position 4)
 SELECT 
@@ -472,7 +451,7 @@ SELECT
     column_name,
     data_type
 FROM information_schema.columns
-WHERE table_schema = 'title_d_app'
+WHERE table_schema = 'title_d_app_int'
   AND table_name = 'im2'
   AND ordinal_position <= 9
 ORDER BY ordinal_position;

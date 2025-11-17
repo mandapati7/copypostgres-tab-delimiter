@@ -71,6 +71,7 @@ public class ColumnOrderResolverService {
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = ?
+            AND table_schema = current_schema()
             ORDER BY ordinal_position
             """;
         
