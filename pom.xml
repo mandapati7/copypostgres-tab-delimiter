@@ -151,6 +151,25 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+                <executions>
+                    <!-- Apply Lombok annotation processing to test sources -->
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>1.18.32</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             
             <plugin>
