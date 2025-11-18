@@ -92,6 +92,9 @@ public class WatchFolderService {
             logger.info("Supported extensions: {}", config.getSupportedExtensions());
             logger.info("========================================");
 
+            // Scan for existing files on startup (recovery from crash/restart)
+            scanExistingFiles();
+
             // Start watch loop in separate thread
             Thread watchThread = new Thread(this::watchForFiles, "WatchFolderThread");
             watchThread.setDaemon(true);
@@ -133,6 +136,50 @@ public class WatchFolderService {
         }
 
         logger.info("[SUCCESS] Watch folder service stopped");
+    }
+
+    /**
+     * Scan upload folder for existing marker files on startup
+     * This handles recovery from application crashes/restarts
+     */
+    private void scanExistingFiles() {
+        logger.info("========================================");
+        logger.info("[STARTUP SCAN] Scanning for existing files...");
+        logger.info("========================================");
+
+        try {
+            Path uploadPath = folderManager.getUploadPath();
+            
+            // Find all marker files in the upload folder
+            try (var stream = Files.list(uploadPath)) {
+                var markerFiles = stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(config.getMarkerExtension()))
+                    .toList();
+
+                if (markerFiles.isEmpty()) {
+                    logger.info("[STARTUP SCAN] No existing marker files found - folder is clean");
+                } else {
+                    logger.info("[STARTUP SCAN] Found {} existing marker file(s) - processing...", markerFiles.size());
+                    
+                    // Process each marker file
+                    for (Path markerFile : markerFiles) {
+                        Path fileName = markerFile.getFileName();
+                        logger.info("[STARTUP SCAN] Processing existing marker: {}", fileName);
+                        
+                        // Submit to thread pool (same as watch loop)
+                        executorService.submit(() -> handleMarkerFile(fileName));
+                    }
+                }
+            }
+
+            logger.info("[STARTUP SCAN] Startup scan completed");
+            logger.info("========================================");
+
+        } catch (IOException e) {
+            logger.error("[STARTUP SCAN] Error scanning for existing files", e);
+            // Don't fail startup - just log the error and continue with watch loop
+        }
     }
 
     /**
