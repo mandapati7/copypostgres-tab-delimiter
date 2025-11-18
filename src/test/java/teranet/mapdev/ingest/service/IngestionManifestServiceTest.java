@@ -124,36 +124,44 @@ class IngestionManifestServiceTest {
     @Test
     void testFindByChecksum_Success() {
         String checksum = "abc123";
-        when(repository.findFirstByFileChecksumOrderByCreatedAtDesc(checksum)).thenReturn(Optional.of(manifest));
+        when(repository.findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED))
+                .thenReturn(Optional.of(manifest));
 
         IngestionManifest result = service.findByChecksum(checksum);
 
         assertNotNull(result);
         assertEquals(manifest.getFileChecksum(), result.getFileChecksum());
-        verify(repository, times(1)).findFirstByFileChecksumOrderByCreatedAtDesc(checksum);
+        verify(repository, times(1)).findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED);
     }
 
     @Test
     void testFindByChecksum_NotFound() {
         String checksum = "xyz789";
-        when(repository.findFirstByFileChecksumOrderByCreatedAtDesc(checksum)).thenReturn(Optional.empty());
+        when(repository.findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED))
+                .thenReturn(Optional.empty());
 
         IngestionManifest result = service.findByChecksum(checksum);
 
         assertNull(result);
-        verify(repository, times(1)).findFirstByFileChecksumOrderByCreatedAtDesc(checksum);
+        verify(repository, times(1)).findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED);
     }
 
     @Test
     void testFindByChecksum_Exception() {
         String checksum = "abc123";
-        when(repository.findFirstByFileChecksumOrderByCreatedAtDesc(checksum))
-            .thenThrow(new RuntimeException("DB error"));
+        when(repository.findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED))
+                .thenThrow(new RuntimeException("DB error"));
 
         IngestionManifest result = service.findByChecksum(checksum);
 
         assertNull(result);
-        verify(repository, times(1)).findFirstByFileChecksumOrderByCreatedAtDesc(checksum);
+        verify(repository, times(1)).findFirstByFileChecksumAndStatusOrderByCreatedAtDesc(checksum,
+                IngestionManifest.Status.COMPLETED);
     }
 
     @Test
@@ -173,7 +181,7 @@ class IngestionManifestServiceTest {
     void testFindByParentBatchId_Exception() {
         UUID parentBatchId = UUID.randomUUID();
         when(repository.findByParentBatchIdOrderByCreatedAt(parentBatchId))
-            .thenThrow(new RuntimeException("DB error"));
+                .thenThrow(new RuntimeException("DB error"));
 
         List<IngestionManifest> result = service.findByParentBatchId(parentBatchId);
 
@@ -186,7 +194,7 @@ class IngestionManifestServiceTest {
     void testFindByStatus_Success() {
         List<IngestionManifest> manifests = Arrays.asList(manifest);
         when(repository.findByStatusOrderByCreatedAtDesc(IngestionManifest.Status.COMPLETED))
-            .thenReturn(manifests);
+                .thenReturn(manifests);
 
         List<IngestionManifest> result = service.findByStatus(IngestionManifest.Status.COMPLETED);
 
@@ -208,8 +216,7 @@ class IngestionManifestServiceTest {
     @Test
     void testFindByStatuses_Success() {
         List<IngestionManifest.Status> statuses = Arrays.asList(
-            IngestionManifest.Status.COMPLETED, IngestionManifest.Status.FAILED
-        );
+                IngestionManifest.Status.COMPLETED, IngestionManifest.Status.FAILED);
         List<IngestionManifest> manifests = Arrays.asList(manifest);
         when(repository.findByStatusInOrderByCreatedAtDesc(statuses)).thenReturn(manifests);
 
@@ -224,7 +231,7 @@ class IngestionManifestServiceTest {
     void testFindByStatuses_Exception() {
         List<IngestionManifest.Status> statuses = Arrays.asList(IngestionManifest.Status.COMPLETED);
         when(repository.findByStatusInOrderByCreatedAtDesc(statuses))
-            .thenThrow(new RuntimeException("DB error"));
+                .thenThrow(new RuntimeException("DB error"));
 
         List<IngestionManifest> result = service.findByStatuses(statuses);
 
@@ -247,7 +254,7 @@ class IngestionManifestServiceTest {
     @Test
     void testFindTopLevelManifests_Exception() {
         when(repository.findByParentBatchIdIsNullOrderByCreatedAtDesc())
-            .thenThrow(new RuntimeException("DB error"));
+                .thenThrow(new RuntimeException("DB error"));
 
         List<IngestionManifest> result = service.findTopLevelManifests();
 
@@ -257,7 +264,7 @@ class IngestionManifestServiceTest {
 
     @Test
     void testGetProcessingStats_Success() {
-        Object[] stats = new Object[]{10L, 7L, 2L, 1L, 1000L};
+        Object[] stats = new Object[] { 10L, 7L, 2L, 1L, 1000L };
         when(repository.getProcessingStatistics()).thenReturn(stats);
 
         IngestionManifestService.ProcessingStats result = service.getProcessingStats();

@@ -1,17 +1,19 @@
 package teranet.mapdev.ingest.config;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
+
+import javax.sql.DataSource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
 
 /**
  * Database initialization component that runs at application startup.
@@ -38,8 +40,8 @@ public class DatabaseInitializer {
     @Autowired
     private IngestConfig ingestConfig;
 
-    @Autowired
-    private CsvProcessingConfig csvProcessingConfig;
+    @Value("${spring.datasource.schema}")
+    private String schema;
 
     /**
      * Runs after the application is fully started.
@@ -304,7 +306,6 @@ public class DatabaseInitializer {
     private void validateAndEnsureStagingTables() {
         // Get list of required staging tables from configuration
         String[] requiredTables = ingestConfig.getMainTablesArray();
-        String schema = "title_d_app";
 
         boolean allTablesValid = true;
         int tablesChecked = 0;
