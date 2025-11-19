@@ -214,10 +214,15 @@ public class WatchFolderController {
             Path uploadPath = Paths.get(config.getUpload(), filename);
             Files.move(errorPath, uploadPath, StandardCopyOption.REPLACE_EXISTING);
             
-            // Create marker file
+            // Create marker file (delete if exists first to avoid FileAlreadyExistsException)
             if (config.isUseMarkerFiles()) {
                 String markerName = config.getMarkerFileName(filename);
                 Path markerPath = Paths.get(config.getUpload(), markerName);
+                
+                // Delete existing marker file if present
+                Files.deleteIfExists(markerPath);
+                
+                // Create fresh marker file
                 Files.createFile(markerPath);
             }
             
