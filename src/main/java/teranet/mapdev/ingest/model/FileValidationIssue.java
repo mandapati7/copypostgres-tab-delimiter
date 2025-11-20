@@ -45,6 +45,7 @@ public class FileValidationIssue {
         CONTROL_CHARACTERS, // Control characters found and replaced
         NON_LATIN_CHARACTERS, // Non-BASIC_LATIN characters found and replaced
         CONSECUTIVE_REPLACED_CHARS, // Consecutive replaced characters collapsed
+        DATA_TRANSFORMATION, // Data transformation applied (e.g., empty PIN fix)
         EMPTY_REQUIRED_FIELD, // Required field is empty
         DATA_TYPE_MISMATCH, // Data doesn't match expected type
         LENGTH_VIOLATION, // Field exceeds max length

@@ -1,10 +1,16 @@
 package teranet.mapdev.ingest.stream;
 
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import teranet.mapdev.ingest.transformer.DataTransformer;
+import teranet.mapdev.ingest.model.FileValidationIssue;
+import teranet.mapdev.ingest.repository.FileValidationIssueRepository;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * FilterInputStream that applies DataTransformer to each line.
@@ -23,16 +29,28 @@ public class TransformingInputStream extends FilterInputStream {
     private final PipedInputStream pipedInput;
     private final Thread transformThread;
     private volatile IOException transformException;
+    private final List<TransformationRecord> transformations = new CopyOnWriteArrayList<>();
+    private final String filePattern;
+    private final UUID batchId;
+    private final FileValidationIssueRepository issueRepository;
     
     /**
      * Create a transforming input stream.
      * 
      * @param in The original input stream
      * @param transformer The transformer to apply
+     * @param filePattern The file pattern being processed
+     * @param batchId The batch ID for tracking
+     * @param issueRepository Repository to save transformation issues
      * @throws IOException If piping cannot be established
      */
-    public TransformingInputStream(InputStream in, DataTransformer transformer) throws IOException {
+    public TransformingInputStream(InputStream in, DataTransformer transformer, String filePattern,
+                        UUID batchId, FileValidationIssueRepository issueRepository) throws IOException {
         super(in);
+        
+        this.filePattern = filePattern;
+        this.batchId = batchId;
+        this.issueRepository = issueRepository;
         
         PipedOutputStream pipedOutput = new PipedOutputStream();
         this.pipedInput = new PipedInputStream(pipedOutput, 65536); // 64KB buffer
@@ -67,6 +85,11 @@ public class TransformingInputStream extends FilterInputStream {
                         continue;
                     }
                     
+                    // Track transformation if line was actually changed
+                    if (!line.equals(transformedLine)) {
+                        transformations.add(new TransformationRecord(lineNumber, line, transformedLine));
+                    }
+                    
                     // Write transformed line
                     writer.write(transformedLine);
                     writer.newLine();
@@ -79,11 +102,49 @@ public class TransformingInputStream extends FilterInputStream {
                 }
             }
             
-            log.debug("Transformation completed. Processed {} lines", lineNumber);
+            log.debug("Transformation completed. Processed {} lines, {} transformations applied", 
+                     lineNumber, transformations.size());
+            
+            // Save transformations to database after processing completes
+            if (!transformations.isEmpty() && issueRepository != null) {
+                saveTransformationIssues();
+            }
             
         } catch (IOException e) {
             log.error("Error during data transformation", e);
             this.transformException = e;
+        }
+    }
+    
+    /**
+     * Save transformation issues to database
+     */
+    private void saveTransformationIssues() {
+        try {
+            // Use parallel stream with map to leverage multiple CPUs
+            List<FileValidationIssue> issues = transformations.parallelStream()
+                .map(record -> {
+                    FileValidationIssue issue = new FileValidationIssue();
+                    issue.setBatchId(batchId);
+                    issue.setFileName(filePattern);
+                    issue.setLineNumber(record.lineNumber);
+                    issue.setIssueType(FileValidationIssue.IssueType.DATA_TRANSFORMATION);
+                    issue.setSeverity(FileValidationIssue.Severity.WARNING);
+                    issue.setAutoFixed(true);
+                    issue.setOriginalLine(record.originalLine);
+                    issue.setCorrectedLine(record.transformedLine);
+                    issue.setFixDescription("Applied data transformation (empty PIN fix)");
+                    issue.setDescription("Empty PIN value '0000' inserted");
+                    return issue;
+                })
+                .toList();
+            
+            issueRepository.saveAll(issues);
+            log.info("{} transformation issues saved for batch {}", issues.size(), batchId);
+            
+        } catch (Exception e) {
+            log.error("Error saving transformation issues for batch {}", batchId, e);
+            // Don't throw - transformation already happened, just logging failed
         }
     }
     
@@ -137,4 +198,15 @@ public class TransformingInputStream extends FilterInputStream {
             throw new IOException("Error during data transformation", transformException);
         }
     }
+
+    /**
+    * Record of a transformation that was applied
+    */
+    @AllArgsConstructor
+    public static class TransformationRecord {
+        public final long lineNumber;
+        public final String originalLine;
+        public final String transformedLine;
+    }
+    
 }

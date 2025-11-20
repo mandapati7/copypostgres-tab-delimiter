@@ -1,6 +1,5 @@
 package teranet.mapdev.ingest.service;
 
-import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -14,6 +13,7 @@ import teranet.mapdev.ingest.model.FileValidationRule;
 import teranet.mapdev.ingest.transformer.DataTransformer;
 import teranet.mapdev.ingest.stream.TransformingInputStream;
 import teranet.mapdev.ingest.repository.FileValidationRuleRepository;
+import teranet.mapdev.ingest.repository.FileValidationIssueRepository;
 
 import javax.sql.DataSource;
 import java.io.BufferedReader;
@@ -58,6 +58,7 @@ public class DelimitedFileProcessingService {
     private final FileValidationService fileValidationService;
     private final DataTransformerFactory dataTransformerFactory;
     private final FileValidationRuleRepository validationRuleRepository;
+    private final FileValidationIssueRepository validationIssueRepository;
 
     public DelimitedFileProcessingService(
             DataSource dataSource,
@@ -69,7 +70,8 @@ public class DelimitedFileProcessingService {
             CsvProcessingConfig csvProcessingConfig,
             FileValidationService fileValidationService,
             DataTransformerFactory dataTransformerFactory,
-            FileValidationRuleRepository validationRuleRepository) {
+            FileValidationRuleRepository validationRuleRepository,
+            FileValidationIssueRepository validationIssueRepository) {
         this.dataSource = dataSource;
         this.ingestConfig = ingestConfig;
         this.fileChecksumService = fileChecksumService;
@@ -80,6 +82,7 @@ public class DelimitedFileProcessingService {
         this.fileValidationService = fileValidationService;
         this.dataTransformerFactory = dataTransformerFactory;
         this.validationRuleRepository = validationRuleRepository;
+        this.validationIssueRepository = validationIssueRepository;
     }
 
     /**
@@ -238,7 +241,8 @@ public class DelimitedFileProcessingService {
                     if (transformer.requiresTransformation()) {
                         log.info("Applying data transformation for file pattern: {} using transformer: {}", 
                                 filePattern, transformer.getClass().getSimpleName());
-                        fileStreamToLoad = new TransformingInputStream(fileStreamToLoad, transformer);
+                        fileStreamToLoad = new TransformingInputStream(fileStreamToLoad, transformer, filePattern,
+                                manifest.getBatchId(), validationIssueRepository);
                     } else {
                         log.debug("No transformation required for file pattern: {}", filePattern);
                     }
